@@ -463,9 +463,11 @@ internal fun SatelliteGhostCard(
  *
  * The pointer turns into an open hand over the grip and a closed one while
  * dragging, and a press without movement does nothing, so buttons can sit
- * inside it. Windows has no grabbing hand: there these icons show its move
- * cursor (four arrows), and an app that wants a hand passes `PointerIcon.Hand`
- * to the overload that takes them.
+ * inside it — the workspace's [SatelliteWorkspace.gripIcon] and
+ * [SatelliteWorkspace.gripDraggingIcon], or the icons the overload that takes
+ * them is given. Windows has no grabbing hand: there the default icons show its
+ * move cursor (four arrows), and an app that wants a hand sets
+ * `PointerIcon.Hand`.
  * The press is claimed, which keeps an enclosing title bar from starting the
  * native window move instead (see `Modifier.noWindowDrag`) — the window is
  * moved by the workspace so the drop can be decided from the pointer position,
@@ -494,7 +496,7 @@ internal fun SatelliteGhostCard(
  */
 @ExperimentalNucleusApi
 public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
-    satelliteDragHandle(scope, TaoPointerIcons.Grab, TaoPointerIcons.Grabbing)
+    satelliteDragHandle(scope, scope.workspace.gripIcon, scope.workspace.gripDraggingIcon)
 
 /**
  * [satelliteDragHandle] with its own pointer icons: [idleIcon] over the grip,
