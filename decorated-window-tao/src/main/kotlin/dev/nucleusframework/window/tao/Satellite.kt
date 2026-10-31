@@ -39,6 +39,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -462,7 +463,9 @@ internal fun SatelliteGhostCard(
  *
  * The pointer turns into an open hand over the grip and a closed one while
  * dragging, and a press without movement does nothing, so buttons can sit
- * inside it.
+ * inside it. Windows has no grabbing hand: there these icons show its move
+ * cursor (four arrows), and an app that wants a hand passes `PointerIcon.Hand`
+ * to the overload that takes them.
  * The press is claimed, which keeps an enclosing title bar from starting the
  * native window move instead (see `Modifier.noWindowDrag`) — the window is
  * moved by the workspace so the drop can be decided from the pointer position,
@@ -491,12 +494,28 @@ internal fun SatelliteGhostCard(
  */
 @ExperimentalNucleusApi
 public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
+    satelliteDragHandle(scope, TaoPointerIcons.Grab, TaoPointerIcons.Grabbing)
+
+/**
+ * [satelliteDragHandle] with its own pointer icons: [idleIcon] over the grip,
+ * [draggingIcon] while dragging; `null` leaves whatever the pointer shows
+ * around it. Where the platform has no grabbing hand (Windows, where the
+ * default icons are its move cursor), `PointerIcon.Hand` gives one.
+ */
+@ExperimentalNucleusApi
+public fun Modifier.satelliteDragHandle(
+    scope: SatelliteScope,
+    idleIcon: PointerIcon?,
+    draggingIcon: PointerIcon?,
+): Modifier =
     if (!scope.workspace.canBeDragged(scope.satellite)) {
         this
     } else {
         screenDragHandle(
             key = scope,
             isDragging = { scope.workspace.draggedSatellite === scope.satellite },
+            idleIcon = idleIcon,
+            draggingIcon = draggingIcon,
             beginTransfer = { window ->
                 scope.workspace.beginTransferDrag(scope.satellite.id, scope.dragOrigin(window))
             },
