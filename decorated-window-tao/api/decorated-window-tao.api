@@ -676,7 +676,8 @@ public final class dev/nucleusframework/window/tao/SatelliteSnapshot {
 }
 
 public final class dev/nucleusframework/window/tao/SatelliteTearOffKt {
-	public static final fun satelliteTearOffHandle (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;)Landroidx/compose/ui/Modifier;
+	public static final fun satelliteTearOffHandle (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Landroidx/compose/ui/input/pointer/PointerIcon;Landroidx/compose/ui/input/pointer/PointerIcon;)Landroidx/compose/ui/Modifier;
+	public static synthetic fun satelliteTearOffHandle$default (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Landroidx/compose/ui/input/pointer/PointerIcon;Landroidx/compose/ui/input/pointer/PointerIcon;ILjava/lang/Object;)Landroidx/compose/ui/Modifier;
 }
 
 public final class dev/nucleusframework/window/tao/SatelliteWindowKt {
