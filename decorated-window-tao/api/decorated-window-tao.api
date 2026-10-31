@@ -543,6 +543,13 @@ public final class dev/nucleusframework/window/tao/SatelliteDragOrigin$FloatingW
 	public final fun getWindow ()Ldev/nucleusframework/window/tao/TaoWindow;
 }
 
+public final class dev/nucleusframework/window/tao/SatelliteDragOrigin$HostElement : dev/nucleusframework/window/tao/SatelliteDragOrigin {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/window/tao/TaoWindow;Landroidx/compose/ui/geometry/Rect;)V
+	public final fun getElementBoundsInWindowPx ()Landroidx/compose/ui/geometry/Rect;
+	public final fun getHost ()Ldev/nucleusframework/window/tao/TaoWindow;
+}
+
 public abstract interface class dev/nucleusframework/window/tao/SatelliteDragSession {
 	public abstract fun cancel ()V
 	public abstract fun end-k-4lQ0M (J)V
@@ -666,6 +673,10 @@ public final class dev/nucleusframework/window/tao/SatelliteSnapshot {
 	public fun hashCode ()I
 	public final fun isOpen ()Z
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/SatelliteTearOffKt {
+	public static final fun satelliteTearOffHandle (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;)Landroidx/compose/ui/Modifier;
 }
 
 public final class dev/nucleusframework/window/tao/SatelliteWindowKt {

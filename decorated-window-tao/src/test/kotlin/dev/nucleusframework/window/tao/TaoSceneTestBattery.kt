@@ -975,6 +975,42 @@ public object TaoSceneTestBattery {
         run("SatelliteFixedPanelTest: a panel that can go nowhere is no drag handle") {
             SatelliteFixedPanelTest().`a panel that can go nowhere is no drag handle`()
         }
+        run("SatelliteTearOffTest: the ghost has the element's size and follows the pointer at the grab offset") {
+            SatelliteTearOffTest().`the ghost has the element's size and follows the pointer at the grab offset`()
+        }
+        run("SatelliteTearOffTest: released on a zone the satellite opens docked there") {
+            SatelliteTearOffTest().`released on a zone the satellite opens docked there`()
+        }
+        run(
+            "SatelliteTearOffTest: released clear of every zone it opens floating where the ghost was, at its own size",
+        ) {
+            SatelliteTearOffTest()
+                .`released clear of every zone it opens floating where the ghost was, at its own size`()
+        }
+        run("SatelliteTearOffTest: released back over the element nothing happens") {
+            SatelliteTearOffTest().`released back over the element nothing happens`()
+        }
+        run("SatelliteTearOffTest: a cancelled tear-off opens nothing and leaves no feedback") {
+            SatelliteTearOffTest().`a cancelled tear-off opens nothing and leaves no feedback`()
+        }
+        run("SatelliteTearOffTest: a satellite declared docked elsewhere opens where it is dropped") {
+            SatelliteTearOffTest().`a satellite declared docked elsewhere opens where it is dropped`()
+        }
+        run("SatelliteTearOffTest: a satellite already shown docked and dropped on its own slot stays") {
+            SatelliteTearOffTest().`a satellite already shown docked and dropped on its own slot stays`()
+        }
+        run("SatelliteTearOffTest: a fixed satellite released clear of every zone stays closed and shows no ghost") {
+            SatelliteTearOffTest().`a fixed satellite released clear of every zone stays closed and shows no ghost`()
+        }
+        run("SatelliteTearOffTest: a tear-off can land in another member's dock") {
+            SatelliteTearOffTest().`a tear-off can land in another member's dock`()
+        }
+        run("SatelliteTearOffTest: a tear-off cannot start before the host's position is known") {
+            SatelliteTearOffTest().`a tear-off cannot start before the host's position is known`()
+        }
+        run("SatelliteTearOffTest: the transfer drag pictures the element and resolves like the pointer drag") {
+            SatelliteTearOffTest().`the transfer drag pictures the element and resolves like the pointer drag`()
+        }
         run("SatelliteDockSidesTest: dock refuses a side the satellite was not declared for") {
             SatelliteDockSidesTest().`dock refuses a side the satellite was not declared for`()
         }

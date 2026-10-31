@@ -121,6 +121,7 @@ class TaoSceneTestBatteryDriftTest {
             WorkspaceDragKindTest::class.java,
             SatelliteExtentRangeTest::class.java,
             SatelliteFixedPanelTest::class.java,
+            SatelliteTearOffTest::class.java,
             DockTargetFromDraggedRectTest::class.java,
             RelocatingSaveableStateRegistryTest::class.java,
             WindowGroupTest::class.java,

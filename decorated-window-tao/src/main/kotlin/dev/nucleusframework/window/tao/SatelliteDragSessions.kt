@@ -43,7 +43,29 @@ internal fun SatelliteWorkspace.createDragSession(
                 scaleFactor = geometry.scaleOrOne(),
             )
         }
+        is SatelliteDragOrigin.HostElement -> {
+            val geometry = dockHostGeometry(origin.host)
+            val clientOrigin = (origin.clientOriginPx?.invoke() ?: geometry?.clientOriginPx()) ?: return null
+            val element = origin.elementBoundsInWindowPx.translate(clientOrigin)
+            TearOffDragSession(
+                workspace = this,
+                entry = entry,
+                elementScreenRectPx = element,
+                grabOffsetPx = pointerScreenPx - element.topLeft,
+                pointer = pointerScreenPx,
+                scaleFactor = geometry?.scaleOrOne() ?: origin.host.scaleFactor.takeIf { it > 0f } ?: 1f,
+                layoutDirection = origin.layoutDirection ?: geometry?.layoutDirection ?: LayoutDirection.Ltr,
+            )
+        }
     }
+
+/**
+ * The slot [entry] occupies right now, if it is shown docked: what a drop
+ * would leave unchanged. `null` for a satellite that is not shown — a drop on
+ * the slot it would reopen in is a real move.
+ */
+internal fun SatelliteWorkspace.shownTarget(entry: SatelliteEntry): DockTarget? =
+    entry.dockHost?.takeIf { entry.isShown }?.let { ownTarget(entry, it) }
 
 /** The part every satellite drag shares: it acts only while live, and cancelling releases it. */
 private abstract class SatelliteDragSessionBase(
@@ -145,6 +167,65 @@ private class DockedDragSession(
     }
 }
 
+/**
+ * A satellite torn off an element of a host window that stands for it (see
+ * [SatelliteDragOrigin.HostElement]): a ghost of the element follows the
+ * pointer, the dock zones light up as for any satellite drag, and releasing
+ *
+ *  - on a zone opens the satellite docked there;
+ *  - back over the element changes nothing;
+ *  - anywhere else opens it as a floating window whose top-left is where the
+ *    ghost's was, at the satellite's own floating size.
+ *
+ * Modelled on [DockedDragSession], with the element in the panel's place.
+ */
+@Suppress("LongParameterList")
+private class TearOffDragSession(
+    workspace: SatelliteWorkspace,
+    private val entry: SatelliteEntry,
+    /** The element's rect on screen at the grab; released inside it, the drag is a no-op. */
+    private val elementScreenRectPx: Rect,
+    /** Pointer offset from the element's top-left at the grab. */
+    private val grabOffsetPx: Offset,
+    /** Where the pointer was last seen; a rejected sample leaves it alone. */
+    private var pointer: Offset,
+    /** The host's px-per-dp, carried to the ghost window. */
+    private val scaleFactor: Float,
+    /** The element's layout direction: what the ghost card is laid out in. */
+    private val layoutDirection: LayoutDirection,
+) : SatelliteDragSessionBase(workspace) {
+    /** Where the satellite already is, when it is shown docked: dropping there changes nothing. */
+    private val own: DockTarget? = workspace.shownTarget(entry)
+
+    override fun update(pointerScreenPx: Offset) {
+        if (!isLive) return
+        pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
+        val ghost = ghostRectPx()
+        workspace.dockPreview = workspace.dockTargetFor(entry, ghost, pointer)?.takeIf { it != own }
+        // As for a docked panel's tear-out: a satellite that cannot float has
+        // no window to promise, so only the zone feedback moves.
+        if (entry.isFloatable) workspace.dragGhost = DragGhost(entry, ghost, scaleFactor, layoutDirection)
+    }
+
+    private fun ghostRectPx(): Rect = Rect(pointer - grabOffsetPx, elementScreenRectPx.size)
+
+    override fun end(pointerScreenPx: Offset) {
+        if (!isLive) return
+        pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
+        val drop = pointer
+        val ghost = ghostRectPx()
+        val target = workspace.dockTargetFor(entry, ghost, drop)
+        cancel()
+        when {
+            target == own && target != null -> Unit
+            target != null -> workspace.openDockedAt(entry.id, target)
+            // Back over the element it was torn from: the gesture was abandoned.
+            elementScreenRectPx.contains(drop) -> Unit
+            else -> workspace.openFloatingAt(entry.id, ghost.topLeft)
+        }
+    }
+}
+
 /** What the [DockLayout] under a transfer drag's release recorded for it. */
 internal sealed interface TransferDrop {
     /** Dock the satellite in [target]. */
@@ -164,7 +245,10 @@ internal sealed interface TransferDrop {
  *  - a dock zone docks the satellite there (or re-docks it);
  *  - no record at all — released over content, another app, the desktop —
  *    lifts a docked panel out as a window the compositor places, and leaves a
- *    floating window where it is.
+ *    floating window where it is;
+ *  - from a [SatelliteDragOrigin.HostElement], a dock zone opens the
+ *    satellite docked there, and no record opens it floating, where the
+ *    compositor places it.
  */
 internal class SatelliteTransferDrag(
     private val workspace: SatelliteWorkspace,
@@ -179,16 +263,32 @@ internal class SatelliteTransferDrag(
     var drop: TransferDrop? = null
 
     /** The slot the dragged panel already occupies; dropping back onto it changes nothing. */
-    val own: DockTarget? = (origin as? SatelliteDragOrigin.DockedPanel)?.let { workspace.ownTarget(entry, it.host) }
+    val own: DockTarget? =
+        when (origin) {
+            is SatelliteDragOrigin.DockedPanel -> workspace.ownTarget(entry, origin.host)
+            is SatelliteDragOrigin.HostElement -> workspace.shownTarget(entry)
+            is SatelliteDragOrigin.FloatingWindow -> null
+        }
 
     override fun end() {
         if (!workspace.isLiveTransfer(this)) return
         val outcome = drop
         workspace.endTransferDrag(this)
+        val tearOff = origin is SatelliteDragOrigin.HostElement
         when (outcome) {
-            is TransferDrop.Dock -> workspace.dropAt(entry.id, outcome.target)
+            is TransferDrop.Dock ->
+                if (tearOff) {
+                    workspace.openDockedAt(entry.id, outcome.target)
+                } else {
+                    workspace.dropAt(entry.id, outcome.target)
+                }
             TransferDrop.Stay -> Unit
-            null -> if (origin is SatelliteDragOrigin.DockedPanel) workspace.undock(entry.id)
+            null ->
+                when (origin) {
+                    is SatelliteDragOrigin.DockedPanel -> workspace.undock(entry.id)
+                    is SatelliteDragOrigin.HostElement -> workspace.openFloatingAt(entry.id, screenTopLeftPx = null)
+                    is SatelliteDragOrigin.FloatingWindow -> Unit
+                }
         }
     }
 
