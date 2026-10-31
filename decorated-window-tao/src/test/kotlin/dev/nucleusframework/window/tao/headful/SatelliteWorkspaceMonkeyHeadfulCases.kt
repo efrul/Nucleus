@@ -617,6 +617,8 @@ private class Monkey(
                     client + panel.topLeft + Offset(GRAB_INSET_PX, GRAB_INSET_PX)
                 }
             }
+            // The monkey drags satellites from their own hosts only.
+            is SatelliteDragOrigin.HostElement -> null
         }
 
     /**

@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -750,11 +751,7 @@ public class SatelliteWorkspace(
     ): SatelliteDragSession? {
         val entry = entryMap[id] ?: return null
         val start = pointerScreenPx.sanitizedOrNull() ?: return null
-        val from =
-            when (origin) {
-                is SatelliteDragOrigin.FloatingWindow -> origin.window
-                is SatelliteDragOrigin.DockedPanel -> origin.host
-            }
+        val from = origin.sourceWindow
         if (!from.canPlaceOnScreen) {
             from.warnScreenPlacementUnsupported("SatelliteWorkspace.beginDrag")
             return null
@@ -825,16 +822,14 @@ public class SatelliteWorkspace(
         entry: SatelliteEntry,
         origin: SatelliteDragOrigin,
     ): Size {
-        val window =
-            when (origin) {
-                is SatelliteDragOrigin.FloatingWindow -> origin.window
-                is SatelliteDragOrigin.DockedPanel -> origin.host
-            }
-        val scale = window.scaleFactor.takeIf { it > 0f } ?: 1f
+        // A torn-off element is pictured whole, at its own size.
+        if (origin is SatelliteDragOrigin.HostElement) return origin.elementBoundsInWindowPx.size
+        val scale = origin.sourceWindow.scaleFactor.takeIf { it > 0f } ?: 1f
         val width =
             when (origin) {
                 is SatelliteDragOrigin.FloatingWindow -> origin.outerBoundsPx()?.get(2)?.toFloat()
                 is SatelliteDragOrigin.DockedPanel -> entry.dockedBoundsInWindowPx?.width
+                is SatelliteDragOrigin.HostElement -> null
             } ?: (entry.windowState.size.width.value * scale)
         return Size(width, DockPanelHeaderHeight.value * scale)
     }
@@ -855,7 +850,63 @@ public class SatelliteWorkspace(
                     ?.takeIf { !it.isEmpty }
                     ?.let { TransferGhostSource.Region(it.roundToIntRect()) }
                     ?: TransferGhostSource.None
+            is SatelliteDragOrigin.HostElement ->
+                origin.elementBoundsInWindowPx
+                    .takeIf { !it.isEmpty }
+                    ?.let { TransferGhostSource.Region(it.roundToIntRect()) }
+                    ?: TransferGhostSource.None
         }
+
+    /**
+     * Opens the satellite [id] docked at [target]: where a drag torn off a
+     * [SatelliteDragOrigin.HostElement] was released on a dock zone.
+     */
+    internal fun openDockedAt(
+        id: String,
+        target: DockTarget,
+    ) {
+        val entry = entryMap[id] ?: return
+        if (target.side !in entry.dockSides) return
+        dropAt(id, target)
+        entry.isOpen = true
+    }
+
+    /**
+     * Opens the satellite [id] as a floating window: its top-left at
+     * [screenTopLeftPx] (physical px) when given and the [owner]'s frame is
+     * known, else where the satellite last floated — the compositor's choice
+     * on native Wayland. The window keeps the satellite's own floating size.
+     * Where a drag torn off a [SatelliteDragOrigin.HostElement] was released
+     * clear of every dock zone; a no-op for a fixed satellite
+     * ([SatelliteEntry.isFloatable] `false`).
+     */
+    internal fun openFloatingAt(
+        id: String,
+        screenTopLeftPx: Offset?,
+    ) {
+        val entry = entryMap[id] ?: return
+        if (!entry.isFloatable) return
+        val size = entry.lastFloating.size
+        val scale = ownerScale()
+        // Converted back from px with the same scale: the size the window gets is the satellite's own, exactly.
+        val placement =
+            screenTopLeftPx
+                ?.let { floatingAtScreen(it, Size(size.width.value * scale, size.height.value * scale)) }
+                ?.copy(size = size)
+                ?: entry.lastFloating
+        (entry.placement as? SatellitePlacement.Docked)?.let { docked ->
+            entry.preferredDockSide = docked.side
+            leaveStack(entry)
+        }
+        applyFloating(entry, placement)
+        entry.isOpen = true
+    }
+
+    /** The [owner]'s px-per-dp, as [floatingAtScreen] converts with; `1` without an owner. */
+    private fun ownerScale(): Float {
+        val owner = owner ?: return 1f
+        return (dockHosts[owner]?.scaleFactor() ?: owner.scaleFactor).takeIf { it > 0f } ?: 1f
+    }
 
     /** Floating placement whose window's top-left lands at [screenTopLeftPx], relative to the current [owner]. */
     internal fun floatingAtScreen(
@@ -864,7 +915,7 @@ public class SatelliteWorkspace(
     ): SatellitePlacement.Floating? {
         val owner = owner ?: return null
         val outer = dockHosts[owner]?.outerBoundsPx() ?: owner.outerBoundsPx() ?: return null
-        val scale = (dockHosts[owner]?.scaleFactor() ?: owner.scaleFactor).takeIf { it > 0f } ?: 1f
+        val scale = ownerScale()
         return SatellitePlacement.Floating(
             positioner =
                 offsetPositioner(
@@ -1217,7 +1268,43 @@ public sealed interface SatelliteDragOrigin {
     public class DockedPanel(
         public val host: TaoWindow,
     ) : SatelliteDragOrigin
+
+    /**
+     * An element of [host] that stands for the satellite while it is not
+     * shown — a column of a list, a row, a card — torn off it to open the
+     * satellite where it is released. See [Modifier.satelliteTearOffHandle],
+     * which drives a drag from one.
+     *
+     * [elementBoundsInWindowPx] is the element's rect in [host]'s content
+     * (physical pixels, as `LayoutCoordinates.localToWindow` gives them): the
+     * ghost under the pointer has its size, and a release back over it is no
+     * drop.
+     *
+     * The element's screen position is read from the [DockLayout] [host]
+     * publishes; built through the public constructor, a drag from a window
+     * without one cannot start.
+     */
+    public class HostElement internal constructor(
+        public val host: TaoWindow,
+        public val elementBoundsInWindowPx: Rect,
+        /** Screen position of [host]'s content origin, physical px; `null` while unknown. */
+        internal val clientOriginPx: (() -> Offset?)?,
+        /** What the ghost is laid out in; `null` takes the dock's. */
+        internal val layoutDirection: LayoutDirection?,
+    ) : SatelliteDragOrigin {
+        public constructor(host: TaoWindow, elementBoundsInWindowPx: Rect) :
+            this(host, elementBoundsInWindowPx, clientOriginPx = null, layoutDirection = null)
+    }
 }
+
+/** The window a drag from this origin starts in. */
+internal val SatelliteDragOrigin.sourceWindow: TaoWindow
+    get() =
+        when (this) {
+            is SatelliteDragOrigin.FloatingWindow -> window
+            is SatelliteDragOrigin.DockedPanel -> host
+            is SatelliteDragOrigin.HostElement -> host
+        }
 
 /**
  * A satellite drag in progress. Positions are physical screen pixels.

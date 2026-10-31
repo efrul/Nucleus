@@ -508,7 +508,7 @@ public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
 private fun SatelliteScope.dragOrigin(window: TaoWindow): SatelliteDragOrigin =
     if (isDocked) SatelliteDragOrigin.DockedPanel(window) else SatelliteDragOrigin.FloatingWindow(window)
 
-private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
+internal fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
     object : ScreenDrag {
         override fun update(pointerScreenPx: Offset) = this@asScreenDrag.update(pointerScreenPx)
 

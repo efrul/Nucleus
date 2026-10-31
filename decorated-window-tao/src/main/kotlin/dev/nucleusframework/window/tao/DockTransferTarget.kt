@@ -99,8 +99,17 @@ internal class DockTransferTarget(
         if (workspace.dockPreview?.host === host) workspace.dockPreview = null
     }
 
-    /** Whether [positionInWindowPx] is on the dragged panel itself, in this host. */
+    /**
+     * Whether [positionInWindowPx] is on what the drag was grabbed from, in
+     * this host: the dragged panel itself, or the element a satellite is
+     * being torn off.
+     */
     private fun SatelliteTransferDrag.isOwnPanel(positionInWindowPx: Offset): Boolean =
-        (origin as? SatelliteDragOrigin.DockedPanel)?.host === host &&
-            entry.dockedBoundsInWindowPx?.contains(positionInWindowPx) == true
+        when (val from = origin) {
+            is SatelliteDragOrigin.DockedPanel ->
+                from.host === host && entry.dockedBoundsInWindowPx?.contains(positionInWindowPx) == true
+            is SatelliteDragOrigin.HostElement ->
+                from.host === host && from.elementBoundsInWindowPx.contains(positionInWindowPx)
+            is SatelliteDragOrigin.FloatingWindow -> false
+        }
 }
