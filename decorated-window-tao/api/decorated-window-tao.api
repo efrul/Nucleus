@@ -724,6 +724,8 @@ public final class dev/nucleusframework/window/tao/SatelliteWorkspace {
 	public final fun getDragKind ()Ldev/nucleusframework/window/tao/WorkspaceDragKind;
 	public final fun getDraggedSatellite ()Ldev/nucleusframework/window/tao/SatelliteEntry;
 	public final fun getFollowFocus ()Z
+	public final fun getGripDraggingIcon ()Landroidx/compose/ui/input/pointer/PointerIcon;
+	public final fun getGripIcon ()Landroidx/compose/ui/input/pointer/PointerIcon;
 	public final fun getMembers ()Ljava/util/List;
 	public final fun getOwner ()Ldev/nucleusframework/window/tao/TaoWindow;
 	public final fun getPinnedOwner ()Ldev/nucleusframework/window/tao/TaoWindow;
@@ -739,6 +741,8 @@ public final class dev/nucleusframework/window/tao/SatelliteWorkspace {
 	public final fun setDockExtent-3ABfNKs (Ldev/nucleusframework/window/tao/DockSide;F)V
 	public final fun setDockedExtent-3ABfNKs (Ljava/lang/String;F)V
 	public final fun setDockedWeight (Ljava/lang/String;F)V
+	public final fun setGripDraggingIcon (Landroidx/compose/ui/input/pointer/PointerIcon;)V
+	public final fun setGripIcon (Landroidx/compose/ui/input/pointer/PointerIcon;)V
 	public final fun setVisible (Z)V
 	public final fun snapshot ()Ldev/nucleusframework/window/tao/SatelliteLayoutSnapshot;
 	public final fun toggle (Ljava/lang/String;)V

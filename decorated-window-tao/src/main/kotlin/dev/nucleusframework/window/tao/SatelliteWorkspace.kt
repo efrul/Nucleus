@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
@@ -271,6 +272,20 @@ public class SatelliteWorkspace(
 
     /** Master switch: `false` hides every satellite, floating and docked alike, without closing any. */
     public var visible: Boolean by mutableStateOf(true)
+
+    /**
+     * The pointer over every satellite grip of this workspace that does not
+     * name its own — [Modifier.satelliteDragHandle], the floating title bar,
+     * [Modifier.satelliteTearOffHandle]: an open hand by default. `null` leaves
+     * whatever the pointer shows around a grip.
+     *
+     * Windows has no grabbing hand, and the default icons show its move cursor
+     * (four arrows) there: an app that wants a hand sets `PointerIcon.Hand`.
+     */
+    public var gripIcon: PointerIcon? by mutableStateOf(TaoPointerIcons.Grab)
+
+    /** The pointer while a grip of this workspace is dragged; see [gripIcon]. A closed hand by default. */
+    public var gripDraggingIcon: PointerIcon? by mutableStateOf(TaoPointerIcons.Grabbing)
 
     private val extents = mutableStateMapOf<DockSide, Dp>()
     private val pendingRestore = HashMap<String, SatelliteSnapshot>()
