@@ -5,6 +5,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -39,13 +40,18 @@ import dev.nucleusframework.window.tao.workspace.screenDragHandle
  * [Modifier.satelliteDragHandle] does, and a release on its own slot changes
  * nothing.
  *
- * As with [Modifier.satelliteDragHandle], the pointer turns into an open hand
- * over the element and a closed one while dragging, and a press without
- * movement does nothing, so a click on the element or on a button inside it
- * still lands. On native **Wayland** the gesture rides the platform's
+ * As with [Modifier.satelliteDragHandle], the pointer turns into [idleIcon]
+ * over the element (an open hand by default) and [draggingIcon] while
+ * dragging (a closed one), and a press without movement does nothing, so a
+ * click on the element or on a button inside it still lands. On native **Wayland** the gesture rides the platform's
  * drag-and-drop session, with a picture of the element as the drag icon; a
  * release clear of every zone opens the satellite floating where it last
  * floated, since the compositor places the window there.
+ *
+ * The two icons are the platform's: where it has no grabbing hand, Windows
+ * among them, [TaoPointerIcons.Grab] shows its move cursor (four arrows); an
+ * app that wants a hand there passes `PointerIcon.Hand`. `null` leaves
+ * whatever the pointer shows around the element.
  *
  * No-op outside a Tao window and while [satelliteId] is not registered in
  * [workspace].
@@ -56,6 +62,8 @@ import dev.nucleusframework.window.tao.workspace.screenDragHandle
 public fun Modifier.satelliteTearOffHandle(
     workspace: SatelliteWorkspace,
     satelliteId: String,
+    idleIcon: PointerIcon? = TaoPointerIcons.Grab,
+    draggingIcon: PointerIcon? = TaoPointerIcons.Grabbing,
 ): Modifier =
     composed {
         // Outside a Tao window there is no screen to drag across.
@@ -69,6 +77,8 @@ public fun Modifier.satelliteTearOffHandle(
             .screenDragHandle(
                 key = entry,
                 isDragging = { workspace.draggedSatellite === entry },
+                idleIcon = idleIcon,
+                draggingIcon = draggingIcon,
                 beginTransfer = { host ->
                     element.boundsInWindowPx()?.let { bounds ->
                         workspace.beginTransferDrag(entry.id, SatelliteDragOrigin.HostElement(host, bounds))
