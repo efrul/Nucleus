@@ -70,6 +70,8 @@ internal class DockLayoutFixture(
     direction: LayoutDirection = LayoutDirection.Ltr,
     /** Draw the splitter as a 1 dp line whose grip is a wider, overflowing box. */
     val gripOverflow: Boolean = false,
+    /** The sides whose outer band a drag can reach (`DockLayout(outerBandSides = …)`). */
+    val outerBandSides: Set<DockSide> = emptySet(),
 ) {
     val workspace = SatelliteWorkspace()
     val sideOrder = mutableStateOf(sideOrder)
@@ -131,6 +133,7 @@ internal class DockLayoutFixture(
                 modifier = Modifier.fillMaxSize(),
                 sideOrder = sideOrder.value,
                 layeredSides = layeredSides.value,
+                outerBandSides = outerBandSides,
                 splitter = { Splitter(this) },
                 panel = { body ->
                     val id = satellite.id
