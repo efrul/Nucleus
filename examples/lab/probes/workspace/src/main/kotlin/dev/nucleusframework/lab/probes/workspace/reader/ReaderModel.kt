@@ -72,6 +72,11 @@ data class ReaderLive(
     val layeredRight: Boolean = true,
     /** `sideOrder` starting with Right: the navigation runs the full height, the bottom panes stop at it. */
     val navigationOutermost: Boolean = true,
+    /**
+     * `outerBandSides`: a pane released on the strip along the window's very edge runs its full length, a pane
+     * released beside the text stays inside the others — the corner goes where it is dropped.
+     */
+    val outerBands: Boolean = true,
 ) {
     val sideOrder: List<DockSide>
         get() =

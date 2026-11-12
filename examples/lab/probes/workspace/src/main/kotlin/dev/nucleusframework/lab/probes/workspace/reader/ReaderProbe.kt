@@ -110,6 +110,9 @@ class ReaderProbe : Probe {
             SwitchRow("Navigation outermost", live.navigationOutermost) {
                 vm.onIntent(SessionIntent.SetLive(live.copy(navigationOutermost = it)))
             }
+            SwitchRow("Outer bands at the edges", live.outerBands) {
+                vm.onIntent(SessionIntent.SetLive(live.copy(outerBands = it)))
+            }
         }
     }
 

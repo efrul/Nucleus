@@ -10,6 +10,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.DockSide
+import dev.nucleusframework.window.tao.DockTarget
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.edgeStripPx
 import dev.nucleusframework.window.tao.onPositionChanged
@@ -88,28 +89,68 @@ internal class HostGeometry(
 
 /**
  * What one side of a drop target offers a drag, in whichever px space the
- * holder says: the [strip] a satellite enters the side by, and — when panels
- * are already docked there — one [slots] rect per rank the dropped panel can
- * take among them, in rank order, covering the stack and the strip between
- * them. Empty [slots] mean the side has no panel to order against.
+ * holder says: the [strip] a satellite enters the side's inner band by, and —
+ * when panels are already docked there — one [slots] rect per rank the
+ * dropped panel can take among them, in rank order, covering the stack and the
+ * strip between them. Empty [slots] mean the band has no panel to order
+ * against.
+ *
+ * [outerStrip] and [outerSlots] are the same for the side's outer band
+ * (`SatellitePlacement.Docked.outer`): the strip along the layout's very
+ * edge, its full length, and the ranks among the panels already in that band.
+ * An empty [outerStrip] means the side offers no outer band, an empty [strip]
+ * no inner one.
  */
 internal data class DockDropZone(
     val strip: Rect,
     val slots: List<Rect> = emptyList(),
+    val outerStrip: Rect = Rect.Zero,
+    val outerSlots: List<Rect> = emptyList(),
 ) {
     fun translate(offset: Offset): DockDropZone =
-        DockDropZone(strip.translate(offset), slots.map { it.translate(offset) })
+        DockDropZone(
+            strip.translate(offset),
+            slots.map { it.translate(offset) },
+            outerStrip.translate(offset),
+            outerSlots.map { it.translate(offset) },
+        )
 
-    /** Whether [point] is on the strip or on one of the slots. */
-    fun contains(point: Offset): Boolean = strip.contains(point) || slots.any { it.contains(point) }
+    /** Whether [point] is on a strip or on one of the slots, of either band. */
+    fun contains(point: Offset): Boolean = strip.contains(point) || slots.any { it.contains(point) } || aimsOuter(point)
+
+    /** Whether [point] is on the outer band's strip or over its stack: a drop there goes into the outer band. */
+    fun aimsOuter(point: Offset): Boolean = outerStrip.contains(point) || outerSlots.any { it.contains(point) }
+
+    /** Whether [point] is over the stack of either band. */
+    fun overStack(point: Offset): Boolean = slots.any { it.contains(point) } || outerSlots.any { it.contains(point) }
 
     /**
-     * The rank [point] aims at: the slot it is in, else the nearest one, so a
-     * pointer past either end of the stack means its first or last rank.
-     * `null` without slots: nothing to order against. An empty slot is a rank
-     * that is not on offer (it would displace a pinned panel) and is skipped.
+     * The rank [point] aims at in the inner band: the slot it is in, else the
+     * nearest one, so a pointer past either end of the stack means its first
+     * or last rank. `null` without slots: nothing to order against. An empty
+     * slot is a rank that is not on offer (it would displace a pinned panel)
+     * and is skipped.
      */
-    fun slotAt(point: Offset): Int? =
+    fun slotAt(point: Offset): Int? = nearestSlot(slots, point)
+
+    /**
+     * Where a drop at [point] lands on [side] of [host]: in the outer band
+     * when [point] aims at it ([aimsOuter]) or when the side offers no inner
+     * one, else in the inner band — at the rank [point] aims at there.
+     */
+    fun targetAt(
+        host: TaoWindow,
+        side: DockSide,
+        point: Offset,
+    ): DockTarget {
+        val outer = !outerStrip.isEmpty && (aimsOuter(point) || strip.isEmpty)
+        return DockTarget(host, side, nearestSlot(if (outer) outerSlots else slots, point), outer)
+    }
+
+    private fun nearestSlot(
+        slots: List<Rect>,
+        point: Offset,
+    ): Int? =
         slots.indices
             .filter { !slots[it].isEmpty }
             .minByOrNull { distanceSquaredPx(slots[it], point) }

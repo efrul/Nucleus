@@ -187,11 +187,14 @@ public data class SatelliteSnapshot(
  * @property satellites snapshots keyed by satellite id.
  * @property dockExtents width (left/right) or height (top/bottom) of each
  *   split dock side, shared by the panels on it.
+ * @property outerBandOrder [SatelliteWorkspace.outerBandOrder]: which outer
+ *   band owns the corners two of them share.
  */
 @ExperimentalNucleusApi
 public data class SatelliteLayoutSnapshot(
     val satellites: Map<String, SatelliteSnapshot>,
     val dockExtents: Map<DockSide, Dp>,
+    val outerBandOrder: List<DockSide> = emptyList(),
 )
 
 /**
@@ -289,6 +292,17 @@ public class SatelliteWorkspace(
 
     private val extents = mutableStateMapOf<DockSide, Dp>()
     private val pendingRestore = HashMap<String, SatelliteSnapshot>()
+
+    /**
+     * The order of the outer bands ([SatellitePlacement.Docked.outer]),
+     * outermost first: [dock] puts a side first whenever it docks a panel
+     * into the side's outer band, so of two outer bands sharing a corner, the
+     * one docked into last owns it — the corner goes where the user dropped
+     * last. Sides never docked into that way are not listed; [DockLayout]
+     * lays their outer bands after the listed ones, in its side order.
+     */
+    public var outerBandOrder: List<DockSide> by mutableStateOf(emptyList())
+        private set
 
     /** Width (left/right) or height (top/bottom) of the panels docked on [side]. */
     public fun dockExtent(side: DockSide): Dp = extents[side] ?: DefaultDockExtent
@@ -486,10 +500,16 @@ public class SatelliteWorkspace(
      * with it, so the panel keeps the width it had wherever it lands. The
      * weight is kept across a move between docks and remembered with the rank.
      *
+     * [outer] docks into the side's outer band
+     * ([SatellitePlacement.Docked.outer]) rather than its inner one, and
+     * makes that band the outermost of the outer bands ([outerBandOrder]);
+     * `null` takes the band the satellite last held on [side], else the inner
+     * one. [order] is a rank within the band.
+     *
      * A side the satellite was not declared for ([SatelliteEntry.dockSides])
      * is refused: nothing changes. [order] is ignored for a pinned satellite
      * ([SatelliteEntry.isReorderable] `false`), which keeps its declared
-     * rank, and is pushed past the pinned panels of the side for any other —
+     * rank, and is pushed past the pinned panels of the band for any other —
      * a drop can join them but never displace one.
      */
     public fun dock(
@@ -497,6 +517,7 @@ public class SatelliteWorkspace(
         side: DockSide,
         order: Int? = null,
         host: TaoWindow? = null,
+        outer: Boolean? = null,
     ) {
         val entry = entryMap[id] ?: return
         if (side !in entry.dockSides) return
@@ -506,23 +527,27 @@ public class SatelliteWorkspace(
         if (current is SatellitePlacement.Floating) entry.lastFloating = currentFloating(entry, current)
         leaveStack(entry)
         val remembered = entry.dockMemory[side]
+        val band = outer ?: remembered?.outer ?: false
         if (side !in extents) setDockExtent(side, extent)
         entry.dockHost =
             host?.takeIf { it in members }
                 ?: entry.dockHost?.takeIf { it in members }
                 ?: owner
-        entry.placement = SatellitePlacement.Docked(side, order = 0, extent, weight)
+        entry.placement = SatellitePlacement.Docked(side, order = 0, extent, weight, band)
         // A pinned panel takes the rank it was declared with, whatever the
-        // caller asks: that rank is the whole point of pinning it.
-        insertInStack(entry, order?.takeIf { entry.isReorderable } ?: remembered?.order)
+        // caller asks: that rank is the whole point of pinning it. The rank
+        // remembered for the side counts in the band it was held in only.
+        val rememberedOrder = remembered?.takeIf { it.outer == band }?.order
+        insertInStack(entry, order?.takeIf { entry.isReorderable } ?: rememberedOrder)
         entry.preferredDockSide = side
+        if (band) outerBandOrder = listOf(side) + (outerBandOrder - side)
         // The newcomer's limits now count for the side it joined.
         reclampSide(side)
     }
 
     /**
      * Docks the satellite [id] where a drag resolved to: [DockTarget.order]
-     * counts the panels *shown* on the side — what the user aimed between —
+     * counts the panels *shown* in the band — what the user aimed between —
      * and is turned into the rank among every panel docked there, closed ones
      * included, before [dock] applies it.
      */
@@ -533,18 +558,18 @@ public class SatelliteWorkspace(
         val entry = entryMap[id] ?: return
         val order =
             target.order?.let { slot ->
-                val stack = stackOf(target.side, target.host, exclude = entry)
+                val stack = stackOf(target.side, target.outer, target.host, exclude = entry)
                 val before = stack.filter { it.isShown }.getOrNull(slot)
                 before?.let(stack::indexOf) ?: stack.size
             }
-        dock(id, target.side, order, target.host)
+        dock(id, target.side, order, target.host, target.outer)
     }
 
     /**
      * The target that drops the docked satellite [entry] back where it is in
-     * [host]: its side, at its own slot among the panels shown there — `null`
-     * order when it is alone, which is what a drop on an empty side resolves
-     * to. `null` for a satellite not docked in [host].
+     * [host]: its side and band, at its own slot among the panels shown there
+     * — `null` order when it is alone, which is what a drop on an empty band
+     * resolves to. `null` for a satellite not docked in [host].
      */
     internal fun ownTarget(
         entry: SatelliteEntry,
@@ -552,9 +577,10 @@ public class SatelliteWorkspace(
     ): DockTarget? {
         val docked = entry.placement as? SatellitePlacement.Docked ?: return null
         if (entry.dockHost !== host) return null
-        if (!entry.isReorderable) return DockTarget(host, docked.side)
-        val shown = stackOf(docked.side, host, exclude = null).filter { it.isShown }
-        return DockTarget(host, docked.side, shown.indexOf(entry).takeIf { shown.size > 1 && it >= 0 })
+        if (!entry.isReorderable) return DockTarget(host, docked.side, outer = docked.outer)
+        val shown = stackOf(docked.side, docked.outer, host, exclude = null).filter { it.isShown }
+        val slot = shown.indexOf(entry).takeIf { shown.size > 1 && it >= 0 }
+        return DockTarget(host, docked.side, slot, docked.outer)
     }
 
     /**
@@ -711,7 +737,8 @@ public class SatelliteWorkspace(
         val docked = entry.placement as? SatellitePlacement.Docked ?: return true
         if (entry.dockSides.any { it != docked.side }) return true
         if (members.size > 1) return true
-        return entry.isReorderable && stackOf(docked.side, entry.dockHost, exclude = entry).any { it.isShown }
+        return entry.isReorderable &&
+            stackOf(docked.side, docked.outer, entry.dockHost, exclude = entry).any { it.isShown }
     }
 
     /** [dockTargetAt] resolved for the satellite [entry] — see [targetFor]. */
@@ -958,6 +985,7 @@ public class SatelliteWorkspace(
                         SatelliteSnapshot(stored, entry.isOpen)
                     },
             dockExtents = extents.toMap(),
+            outerBandOrder = outerBandOrder,
         )
 
     /**
@@ -966,6 +994,7 @@ public class SatelliteWorkspace(
      */
     public fun restore(snapshot: SatelliteLayoutSnapshot) {
         extents.clear()
+        outerBandOrder = snapshot.outerBandOrder.distinct()
         // Placements first: a side's limits are those of the panels the
         // snapshot puts on it, not of the ones it is about to move away.
         for ((id, saved) in snapshot.satellites) {
@@ -1145,19 +1174,20 @@ public class SatelliteWorkspace(
     }
 
     /**
-     * The panels docked on [side] of [host]'s layout — open or not, every one
-     * of them holds a rank — in rank order, without [exclude].
+     * The panels docked in the [outer] or inner band of [side] of [host]'s
+     * layout — open or not, every one of them holds a rank — in rank order,
+     * without [exclude].
      */
     private fun stackOf(
         side: DockSide,
+        outer: Boolean,
         host: TaoWindow?,
         exclude: SatelliteEntry?,
     ): List<SatelliteEntry> =
         entryMap.values
             .filter {
-                it !== exclude &&
-                    it.dockHost === host &&
-                    (it.placement as? SatellitePlacement.Docked)?.side == side
+                val docked = it.placement as? SatellitePlacement.Docked
+                it !== exclude && it.dockHost === host && docked?.side == side && docked.outer == outer
             }.sortedWith(compareBy({ (it.placement as SatellitePlacement.Docked).order }, { it.id }))
 
     /**
@@ -1168,11 +1198,11 @@ public class SatelliteWorkspace(
     private fun leaveStack(entry: SatelliteEntry) {
         val docked = entry.placement as? SatellitePlacement.Docked ?: return
         entry.dockMemory[docked.side] = docked
-        renumber(stackOf(docked.side, entry.dockHost, exclude = entry))
+        renumber(stackOf(docked.side, docked.outer, entry.dockHost, exclude = entry))
     }
 
     /**
-     * Puts the freshly docked [entry] at [index] of its side's stack — the
+     * Puts the freshly docked [entry] at [index] of its band's stack — the
      * end when `null` or past it — and renumbers the stack from `0`.
      *
      * A reorderable [entry] cannot land in front of a pinned panel: the ranks
@@ -1186,7 +1216,7 @@ public class SatelliteWorkspace(
         index: Int?,
     ) {
         val docked = entry.placement as SatellitePlacement.Docked
-        val stack = stackOf(docked.side, entry.dockHost, exclude = entry).toMutableList()
+        val stack = stackOf(docked.side, docked.outer, entry.dockHost, exclude = entry).toMutableList()
         val floor = if (entry.isReorderable) pinnedFloor(stack) else 0
         stack.add((index ?: stack.size).coerceIn(floor, stack.size), entry)
         renumber(stack)
@@ -1213,6 +1243,13 @@ public class SatelliteWorkspace(
         /** Depth of the drop zone inside each edge of a [DockLayout]. */
         public val DockZoneWidth: Dp = 64.dp
 
+        /**
+         * Depth of the zone along each edge of a [DockLayout] that docks into
+         * the side's outer band (`DockLayout(outerBandSides = …)`): the
+         * outermost part of the edge, its full length, corners included.
+         */
+        public val OuterDockZoneWidth: Dp = 24.dp
+
         /** Smallest share a split-side panel can be dragged down to; keeps its divider reachable. */
         private const val MIN_DOCK_WEIGHT = 0.05f
 
@@ -1228,11 +1265,13 @@ public class SatelliteWorkspace(
 }
 
 /**
- * A dock zone: the [side] of the [DockLayout] in [host], and the rank
+ * A dock zone: the [side] of the [DockLayout] in [host], in its outer band
+ * when [outer] ([SatellitePlacement.Docked.outer]) — the zone along the
+ * layout's very edge — else in its inner one, and the rank
  * ([SatellitePlacement.Docked.order]) the dropped panel takes among the
- * panels shown on that side — `null` leaves the choice to
+ * panels shown in that band — `null` leaves the choice to
  * [SatelliteWorkspace.dock]: the rank the satellite last held there, else the
- * end. A drag resolves the rank from where the pointer is over the side's
+ * end. A drag resolves the rank from where the pointer is over the band's
  * stack, so a panel can be dropped between two others.
  */
 @ExperimentalNucleusApi
@@ -1240,6 +1279,7 @@ public data class DockTarget(
     val host: TaoWindow,
     val side: DockSide,
     val order: Int? = null,
+    val outer: Boolean = false,
 )
 
 /**
@@ -1381,7 +1421,7 @@ internal fun HostGeometry.dockHitTest(
     // Over the layout, in a zone or not: no other layout under it is
     // consulted, exactly as for a pointer hit.
     val side = dockSideEntered(zones, draggedRectPx, pointerPx) ?: return DockHit.Content
-    return DockHit.Zone(DockTarget(host, side, zones.getValue(side).slotAt(pointerPx)))
+    return DockHit.Zone(zones.getValue(side).targetAt(host, side, pointerPx))
 }
 
 /**
@@ -1404,26 +1444,35 @@ internal fun HostGeometry.dockHitTest(
  * entered too: that is how a panel is dropped between two others. Several
  * zones at once — a palette larger than the layout reaches all four, a strip
  * runs across the corner of a neighbouring stack — are resolved by the
- * pointer: the one stack it is over, else the one strip it is in, so an
- * ambiguous overlap still drops where the user aims; else the closest edge
- * wins.
+ * pointer: the one outer strip it is in, then the one stack it is over, else
+ * the one strip it is in, so an ambiguous overlap still drops where the user
+ * aims; else the closest edge wins.
+ *
+ * A side's outer band ([DockDropZone.outerStrip], [DockDropZone.outerSlots])
+ * is entered by the pointer only: the satellite's edge reaching the layout's
+ * edge is the ordinary way into the side's inner band, and a panel just
+ * picked up from the edge has its edge there already. The outer strip is the
+ * outermost part of each edge, its full length: the pointer pushed into it
+ * means the corner, and wins over the stack of the side it runs across.
  */
 internal fun dockSideEntered(
     zones: Map<DockSide, DockDropZone>,
     dragged: Rect,
     pointer: Offset,
 ): DockSide? {
-    val live = zones.filterValues { !it.strip.isEmpty }
+    val live = zones.filterValues { !it.strip.isEmpty || !it.outerStrip.isEmpty }
     val gaps =
         live
-            .filter { (side, zone) -> overlapsAcross(zone.strip, dragged, side) }
+            .filter { (side, zone) -> !zone.strip.isEmpty && overlapsAcross(zone.strip, dragged, side) }
             .mapValues { (side, zone) -> abs(edgePx(dragged, side) - outerEdgePx(zone.strip, side)) }
             .filter { (side, gap) -> gap <= thicknessPx(live.getValue(side).strip, side) }
-    val overStack = live.filterValues { zone -> zone.slots.any { it.contains(pointer) } }.keys
+    val inOuterStrip = live.filterValues { it.outerStrip.contains(pointer) }.keys
+    val overStack = live.filterValues { it.overStack(pointer) }.keys
     val underPointer = live.filterValues { it.contains(pointer) }.keys
     val candidates = gaps.keys + underPointer
     candidates.singleOrNull()?.let { return it }
     if (candidates.isEmpty()) return null
+    inOuterStrip.singleOrNull()?.let { return it }
     overStack.singleOrNull()?.let { return it }
     underPointer.singleOrNull()?.let { return it }
     return candidates.minBy { gaps[it] ?: Float.MAX_VALUE }
