@@ -64,6 +64,18 @@ import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
  *    next to each other, each with its own splitter and width. This is the
  *    arrangement of a nested split-pane tree, without the tree.
  *
+ * Every side has a second band, its **outer** one
+ * ([SatellitePlacement.Docked.outer]): outside every side's inner band, it
+ * runs the full length of the layout and owns the side's corners, whatever
+ * [sideOrder] says — of two outer bands that share a corner, the one docked
+ * into last owns it ([SatelliteWorkspace.outerBandOrder]). It is laid out as
+ * its side is, split or layered. On the sides in [outerBandSides] a drag
+ * reaches it by the strip of [SatelliteWorkspace.OuterDockZoneWidth] along
+ * the layout's very edge, corners included, so the place a panel is released
+ * is what decides which side gets a corner: a reader's link panel dropped at
+ * the window's edge runs its whole height, dropped beside the text it stays
+ * above the commentary strip.
+ *
  * With nothing docked — or while the workspace is not
  * [SatelliteWorkspace.visible] — the layout is just [content]. When the window
  * is too small for what the extents ask, the panels along that axis are drawn
@@ -103,6 +115,9 @@ import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
  *
  * @param sideOrder the four sides from the outermost in; every side exactly once.
  * @param layeredSides the sides whose panels are layers rather than a split.
+ * @param outerBandSides the sides a drag can dock into the outer band of, by
+ *   the strip along the layout's edge. A panel docked into an outer band
+ *   otherwise ([SatelliteWorkspace.dock], a snapshot) is laid out on any side.
  * @param splitter the drag handle drawn between a side and the content, and
  *   between two panels; [DefaultDockSplitter] is a plain bar in the window
  *   style's border colour. Apply [DockSplitterScope.dockSplitterHandle] to
@@ -120,6 +135,7 @@ public fun DockLayout(
     host: TaoWindow? = LocalTaoWindow.current,
     sideOrder: List<DockSide> = DefaultDockSideOrder,
     layeredSides: Set<DockSide> = emptySet(),
+    outerBandSides: Set<DockSide> = emptySet(),
     splitter: @Composable DockSplitterScope.() -> Unit = { DefaultDockSplitter() },
     panel: @Composable SatelliteScope.(panel: @Composable () -> Unit) -> Unit = { it() },
     content: @Composable () -> Unit,
@@ -143,6 +159,8 @@ public fun DockLayout(
     val state = remember(workspace) { DockLayoutState(workspace) }
     state.docked = docked
     state.layeredSides = layeredSides
+    state.outerBandSides = outerBandSides
+    state.bands = bandOrder(sideOrder, workspace.outerBandOrder)
     state.containerSize = containerSize
     state.direction = direction
     state.splitter = splitter
@@ -168,7 +186,7 @@ public fun DockLayout(
                 .onSizeChanged { state.layoutSize = it }
                 .onPositionChanged { state.layoutBoundsInWindowPx = it.boundsInWindow() },
         ) {
-            DockBand(state, sideOrder, 0, movableContent)
+            DockBand(state, state.bands, 0, movableContent)
             if (host != null) DockZoneHints(workspace, host, state)
         }
     }
@@ -185,74 +203,81 @@ internal class DockLayoutState(
 ) {
     var docked: List<SatelliteEntry> by mutableStateOf(emptyList())
     var layeredSides: Set<DockSide> by mutableStateOf(emptySet())
+    var outerBandSides: Set<DockSide> by mutableStateOf(emptySet())
+
+    /** Every band from the outermost in ([bandOrder]). */
+    var bands: List<Band> by mutableStateOf(emptyList())
     var containerSize: IntSize by mutableStateOf(IntSize.Zero)
     var direction: LayoutDirection by mutableStateOf(LayoutDirection.Ltr)
     var splitter: @Composable DockSplitterScope.() -> Unit by mutableStateOf({})
     var panel: @Composable SatelliteScope.(panel: @Composable () -> Unit) -> Unit by mutableStateOf({ it() })
     var layoutSize: IntSize by mutableStateOf(IntSize.Zero)
-    val stackLengthsPx = HashMap<DockSide, Int>()
+    val stackLengthsPx = HashMap<Band, Int>()
 
-    /** The layout's own rect and each side's band — the side plus everything inside it — in host window px. */
+    /** The layout's own rect and each band's — the band plus everything inside it — in host window px. */
     var layoutBoundsInWindowPx: Rect by mutableStateOf(Rect.Zero)
-    val bandBoundsInWindowPx = mutableStateMapOf<DockSide, Rect>()
+    val bandBoundsInWindowPx = mutableStateMapOf<Band, Rect>()
 
     /**
-     * Where the satellite [dragged] would land if dropped on [side], in the
-     * layout's own px: a strip of [thicknessPx] along the side's edge of its
-     * band — not of the whole layout, since an outer side owns the corners —
-     * pushed inwards past the layers already there on a layered side, where a
-     * new panel is a new innermost layer. On a split side that already has a
-     * stack the panel joins the stack, so the stack itself is the answer — at
-     * [thicknessPx], since the newcomer's limits may change the side's.
+     * Where the satellite [dragged] would land if dropped in [band], in the
+     * layout's own px: a strip of [thicknessPx] along the side's edge of the
+     * band — not of the whole layout, since a band laid earlier owns the
+     * corners — pushed inwards past the layers already there on a layered
+     * side, where a new panel is a new innermost layer. On a split side that
+     * already has a stack the panel joins the stack, so the stack itself is
+     * the answer — at [thicknessPx], since the newcomer's limits may change
+     * the side's.
      *
-     * A [dragged] panel that is the only one on *another* side of this same
-     * layout is counted as already gone: it frees its side, and the band it
-     * leaves behind is where the drop will actually be. Without that the
-     * preview would promise the layout as it stands mid-drag rather than the
-     * one the release produces.
+     * The band is the one the release produces ([bandPx]): an outer band runs
+     * the layout's full length once dropped into, and a band the [dragged]
+     * panel leaves empty frees its space. Without that the preview would
+     * promise the layout as it stands mid-drag rather than the one the
+     * release produces.
      */
     fun landingRectPx(
-        side: DockSide,
+        band: Band,
         thicknessPx: Float,
         joinsStack: Boolean,
         dragged: SatelliteEntry? = null,
     ): Rect {
         val origin = layoutBoundsInWindowPx.topLeft
-        val band = bandPx(side, dragged)
+        val side = band.side
+        val bandRect = bandPx(band, dragged)
         val stack =
-            panelsOn(side)
+            panelsOn(band)
                 .mapNotNull { it.dockedBoundsInWindowPx }
                 .takeIf { it.isNotEmpty() }
                 ?.reduce { acc, rect -> unionOf(acc, rect) }
                 ?.translate(-origin)
+                ?.alongBand(side, bandRect)
         if (stack != null && joinsStack && !isLayered(side)) {
             return if (thicknessPx > 0f) stack.withThickness(side, thicknessPx) else stack
         }
         val inset = if (stack != null && isLayered(side)) stack else null
         return when (side) {
             DockSide.Left -> {
-                val left = inset?.right ?: band.left
-                Rect(left, band.top, left + thicknessPx, band.bottom)
+                val left = inset?.right ?: bandRect.left
+                Rect(left, bandRect.top, left + thicknessPx, bandRect.bottom)
             }
             DockSide.Right -> {
-                val right = inset?.left ?: band.right
-                Rect(right - thicknessPx, band.top, right, band.bottom)
+                val right = inset?.left ?: bandRect.right
+                Rect(right - thicknessPx, bandRect.top, right, bandRect.bottom)
             }
             DockSide.Top -> {
-                val top = inset?.bottom ?: band.top
-                Rect(band.left, top, band.right, top + thicknessPx)
+                val top = inset?.bottom ?: bandRect.top
+                Rect(bandRect.left, top, bandRect.right, top + thicknessPx)
             }
             DockSide.Bottom -> {
-                val bottom = inset?.top ?: band.bottom
-                Rect(band.left, bottom - thicknessPx, band.right, bottom)
+                val bottom = inset?.top ?: bandRect.bottom
+                Rect(bandRect.left, bottom - thicknessPx, bandRect.right, bottom)
             }
         }
     }
 
     /**
-     * The ranks a panel dropped on [side] can take among the panels already
+     * The ranks a panel dropped in [band] can take among the panels already
      * shown there, as one rect per rank in rank order — in the layout's own
-     * px, like [landingRectPx]. Together the rects cover the side's stack and
+     * px, like [landingRectPx]. Together the rects cover the band's stack and
      * [stripPx], its drop strip: rank `k` is the region between the centres of
      * the panels of ranks `k - 1` and `k`, the first reaching the side's own
      * edge (a layered side) or the start of the band (a split side), the last
@@ -265,27 +290,28 @@ internal class DockLayoutState(
      * for, and the first rank on offer covers the area of the ones dropped.
      */
     fun dropSlotsPx(
-        side: DockSide,
+        band: Band,
         stripPx: Rect,
         dragged: SatelliteEntry?,
     ): List<Rect> {
         // A pinned panel has one rank and it is not the user's to change.
         if (dragged != null && !dragged.isReorderable) return emptyList()
+        val side = band.side
         val origin = layoutBoundsInWindowPx.topLeft
-        val panels = panelsOn(side).filter { it !== dragged }
+        val panels = panelsOn(band).filter { it !== dragged }
         if (panels.isEmpty()) return emptyList()
         val rects = panels.map { (it.dockedBoundsInWindowPx ?: return emptyList()).translate(-origin) }
-        val band = (bandBoundsInWindowPx[side] ?: layoutBoundsInWindowPx).translate(-origin)
+        val measured = (bandBoundsInWindowPx[band] ?: layoutBoundsInWindowPx).translate(-origin)
         val layered = isLayered(side)
         var region = rects.reduce(::unionOf).let { unionOf(it, stripPx) }
         if (layered) {
             // Out to the side's own edge: a drop past the outermost layer is the first rank.
             region =
                 when (side) {
-                    DockSide.Left -> region.copy(left = band.left)
-                    DockSide.Right -> region.copy(right = band.right)
-                    DockSide.Top -> region.copy(top = band.top)
-                    DockSide.Bottom -> region.copy(bottom = band.bottom)
+                    DockSide.Left -> region.copy(left = measured.left)
+                    DockSide.Right -> region.copy(right = measured.right)
+                    DockSide.Top -> region.copy(top = measured.top)
+                    DockSide.Bottom -> region.copy(bottom = measured.bottom)
                 }
         }
         val alongX = side.isVertical == layered
@@ -312,29 +338,44 @@ internal class DockLayoutState(
     }
 
     /**
-     * The band of [side] in the layout's own px — the side plus everything
-     * inside it — grown over the space the [dragged] panel frees when it is
-     * the only one on another side of this layout: that band is where the
+     * The rect of [band] in the layout's own px — the band plus everything
+     * inside it — in the layout a drop of [dragged] into it produces. An
+     * outer band is laid before every other once dropped into
+     * ([SatelliteWorkspace.dock]), so it is the whole layout. Any other is
+     * the band as measured, grown over the room the [dragged] panel frees
+     * when it leaves a band laid before it: all of that band's when it was
+     * alone there, its own layer on a layered side — that band is where the
      * drop actually lands, not the one measured mid-drag.
      */
     private fun bandPx(
-        side: DockSide,
+        band: Band,
         dragged: SatelliteEntry?,
     ): Rect {
         val origin = layoutBoundsInWindowPx.topLeft
         val layout = layoutBoundsInWindowPx.translate(-origin)
-        val measured = (bandBoundsInWindowPx[side] ?: layoutBoundsInWindowPx).translate(-origin)
-        val leaving = dragged?.takeIf { it.isDocked && it !in panelsOn(side) && panelsOn(sideOf(it)).size == 1 }
-        val freed = leaving?.dockedBoundsInWindowPx?.translate(-origin) ?: return measured
-        return unionOf(measured, freed).intersect(layout)
+        if (band.outer) return layout
+        val measured = (bandBoundsInWindowPx[band] ?: layoutBoundsInWindowPx).translate(-origin)
+        val from = dragged?.takeIf { it in docked }?.band ?: return measured
+        // A band laid inside this one gives it no room.
+        if (from == band || bands.indexOf(from) > bands.indexOf(band)) return measured
+        val own = dragged.dockedBoundsInWindowPx?.translate(-origin) ?: return measured
+        val grown =
+            when {
+                // Out to the panel's outer edge: the band goes, its splitter with it.
+                panelsOn(from).size == 1 -> measured.grownTo(from.side, own)
+                isLayered(from.side) -> measured.grownBy(from.side, if (from.side.isVertical) own.width else own.height)
+                // A split stack keeps its thickness.
+                else -> measured
+            }
+        return grown.intersect(layout)
     }
 
     /**
-     * The space the [dragged] panel occupies once dropped at rank [order] on
-     * [side], in the layout's own px — what the drop preview is drawn on, so
+     * The space the [dragged] panel occupies once dropped at rank [order] in
+     * [band], in the layout's own px — what the drop preview is drawn on, so
      * that what the user sees lit up is what the release produces.
      *
-     *  - A side with no other panel: the strip along its edge, [extentPx]
+     *  - A band with no other panel: the strip along its edge, [extentPx]
      *    thick ([landingRectPx]).
      *  - A layered side: a full-length layer of [extentPx], laid where rank
      *    [order] puts it — the layers of lower rank keep their thickness
@@ -345,51 +386,65 @@ internal class DockLayoutState(
      *
      * The [dragged] panel is not counted among the others, as in
      * [dropSlotsPx]. A `null` [order] is the rank [SatelliteWorkspace.dock]
-     * gives without one — the rank last held on that side, else the end —
+     * gives without one — the rank last held in that band, else the end —
      * and a rank in front of a pinned panel is pushed past it, as the drop is.
      */
     fun dropRectPx(
-        side: DockSide,
+        band: Band,
         dragged: SatelliteEntry?,
         order: Int?,
         extentPx: Float,
     ): Rect {
+        val side = band.side
         val origin = layoutBoundsInWindowPx.topLeft
-        val others = panelsOn(side).filter { it !== dragged }
+        val others = panelsOn(band).filter { it !== dragged }
         val rects = others.map { it.dockedBoundsInWindowPx?.translate(-origin) }.filterNotNull()
         // No other panel, or one not placed yet: the strip along the edge.
         if (rects.size != others.size || others.isEmpty()) {
-            return landingRectPx(side, extentPx, joinsStack = true, dragged = dragged)
+            return landingRectPx(band, extentPx, joinsStack = true, dragged = dragged)
         }
         val floor = if (dragged?.isReorderable == false) 0 else workspace.pinnedFloor(others)
-        val rank = (order ?: dragged?.dockMemory?.get(side)?.order ?: others.size).coerceIn(floor, others.size)
-        val band = bandPx(side, dragged)
+        val remembered =
+            dragged
+                ?.dockMemory
+                ?.get(side)
+                ?.takeIf { it.outer == band.outer }
+                ?.order
+        val rank = (order ?: remembered ?: others.size).coerceIn(floor, others.size)
+        val bandRect = bandPx(band, dragged)
         if (isLayered(side)) {
             val alongX = side.isVertical
             val thicknesses = rects.map { if (alongX) it.width else it.height }.toMutableList()
             thicknesses.add(rank, extentPx)
             val before = thicknesses.take(rank).sum()
             return when (side) {
-                DockSide.Left -> Rect(band.left + before, band.top, band.left + before + extentPx, band.bottom)
-                DockSide.Right -> Rect(band.right - before - extentPx, band.top, band.right - before, band.bottom)
-                DockSide.Top -> Rect(band.left, band.top + before, band.right, band.top + before + extentPx)
-                DockSide.Bottom -> Rect(band.left, band.bottom - before - extentPx, band.right, band.bottom - before)
+                DockSide.Left ->
+                    Rect(bandRect.left + before, bandRect.top, bandRect.left + before + extentPx, bandRect.bottom)
+                DockSide.Right ->
+                    Rect(bandRect.right - before - extentPx, bandRect.top, bandRect.right - before, bandRect.bottom)
+                DockSide.Top ->
+                    Rect(bandRect.left, bandRect.top + before, bandRect.right, bandRect.top + before + extentPx)
+                DockSide.Bottom ->
+                    Rect(bandRect.left, bandRect.bottom - before - extentPx, bandRect.right, bandRect.bottom - before)
             }
         }
-        // A split side: the stack keeps its thickness and its length, and the
-        // panels — the dragged one among them — divide the length by weight,
-        // the dividers between them taking what they take today.
-        val all = panelsOn(side).mapNotNull { it.dockedBoundsInWindowPx?.translate(-origin) }
-        val stack = all.reduce(::unionOf)
+        // A split side: the stack keeps its thickness and runs the band's
+        // length, and the panels — the dragged one among them — divide the
+        // length by weight, the dividers between them taking what they take
+        // today.
+        val all = panelsOn(band).mapNotNull { it.dockedBoundsInWindowPx?.translate(-origin) }
         val alongX = !side.isVertical
-        val length = if (alongX) stack.width else stack.height
+        val measuredStack = all.reduce(::unionOf)
+        val measuredLength = if (alongX) measuredStack.width else measuredStack.height
         val dividerPx =
             if (all.size > 1) {
-                (length - all.sumOf { (if (alongX) it.width else it.height).toDouble() }.toFloat()).coerceAtLeast(0f) /
-                    (all.size - 1)
+                (measuredLength - all.sumOf { (if (alongX) it.width else it.height).toDouble() }.toFloat())
+                    .coerceAtLeast(0f) / (all.size - 1)
             } else {
                 0f
             }
+        val stack = measuredStack.alongBand(side, bandRect)
+        val length = if (alongX) stack.width else stack.height
         val weights = others.map(::weightOf).toMutableList()
         weights.add(rank, dragged?.let { workspace.dockSeedWeight(it, side) } ?: 1f)
         val total = weights.sum()
@@ -423,13 +478,25 @@ internal class DockLayoutState(
 
     fun isLayered(side: DockSide): Boolean = side in layeredSides
 
-    /** The side [entry] is docked on. */
-    fun sideOf(entry: SatelliteEntry): DockSide = (entry.placement as SatellitePlacement.Docked).side
-
-    fun panelsOn(side: DockSide): List<SatelliteEntry> =
+    /** The panels docked in [band], in rank order. */
+    fun panelsOn(band: Band): List<SatelliteEntry> =
         docked
-            .filter { (it.placement as SatellitePlacement.Docked).side == side }
+            .filter { it.band == band }
             .sortedWith(compareBy({ (it.placement as SatellitePlacement.Docked).order }, { it.id }))
+
+    /** The panels docked on [side], in either of its bands. */
+    fun panelsOnSide(side: DockSide): List<SatelliteEntry> = docked.filter { it.band.side == side }
+
+    /** How many bands of [side] hold a panel other than [excluding]: each takes a split side's extent. */
+    private fun bandsInUse(
+        side: DockSide,
+        excluding: SatelliteEntry? = null,
+    ): Int =
+        panelsOnSide(side)
+            .filter { it !== excluding }
+            .map { it.band }
+            .distinct()
+            .size
 
     /** A layered panel's own thickness, falling back to the side's. */
     fun extentOf(entry: SatelliteEntry): Dp {
@@ -437,17 +504,17 @@ internal class DockLayoutState(
         return docked.extent ?: workspace.dockExtent(docked.side)
     }
 
-    /** Thickness taken by every panel on [side] but [excluding], in px. */
+    /** Thickness taken by every panel on [side], in both its bands, but [excluding], in px. */
     fun sideThicknessPx(
         side: DockSide,
         density: Density,
         excluding: SatelliteEntry? = null,
     ): Float {
-        val panels = panelsOn(side).filter { it !== excluding }
+        val panels = panelsOnSide(side).filter { it !== excluding }
         if (panels.isEmpty()) return 0f
         val layered = isLayered(side)
         return with(density) {
-            if (!layered) return@with workspace.dockExtent(side).toPx()
+            if (!layered) return@with workspace.dockExtent(side).toPx() * bandsInUse(side, excluding)
             panels.sumOf { extentOf(it).toPx().toDouble() }.toFloat()
         }
     }
@@ -472,18 +539,20 @@ internal class DockLayoutState(
     }
 
     /**
-     * [fit] as it will be once [dragged] is dropped on [side] at [thicknessPx]
-     * (unfitted): the panel counted out of wherever it is now and into [side]
+     * [fit] as it will be once [dragged] is dropped in [band] at [thicknessPx]
+     * (unfitted): the panel counted out of wherever it is now and into [band]
      * — a new layer on a layered side, the side's new shared thickness on a
-     * split one. What a drop preview is drawn at, so a window already short of
-     * room shows the thickness the release produces rather than today's.
+     * split one, taken by each of its bands that holds a panel. What a drop
+     * preview is drawn at, so a window already short of room shows the
+     * thickness the release produces rather than today's.
      */
     fun fitAfterDrop(
-        side: DockSide,
+        band: Band,
         dragged: SatelliteEntry,
         thicknessPx: Float,
         density: Density,
     ): Float {
+        val side = band.side
         val along = if (side.isVertical) layoutSize.width else layoutSize.height
         if (along <= 0) return 1f
         val total =
@@ -493,7 +562,10 @@ internal class DockLayoutState(
                     when {
                         s != side -> rest
                         isLayered(side) -> rest + thicknessPx
-                        else -> thicknessPx
+                        else -> {
+                            val bands = (panelsOnSide(side).filter { it !== dragged }.map { it.band } + band).distinct()
+                            thicknessPx * bands.size
+                        }
                     }.toDouble()
                 }.toFloat()
         return fitFactor(along, total, density)
@@ -531,8 +603,10 @@ internal class DockLayoutState(
         panel: SatelliteEntry? = null,
     ): Float {
         val along = if (side.isVertical) layoutSize.width else layoutSize.height
-        val others = sideThicknessPx(side, density) + sideThicknessPx(side.opposite, density) - currentPx
-        val maxPx = along - with(density) { MinContentExtent.toPx() } - others
+        // A split side's thickness is taken once by each of its bands in use.
+        val times = if (panel == null) bandsInUse(side).coerceAtLeast(1) else 1
+        val others = sideThicknessPx(side, density) + sideThicknessPx(side.opposite, density) - currentPx * times
+        val maxPx = (along - with(density) { MinContentExtent.toPx() } - others) / times
         var nextPx = currentPx + towardsContentPx
         if (along > 0 && maxPx > 0f) nextPx = nextPx.coerceAtMost(maxPx)
         // What the panels allow: a layered [panel]'s own range, else the range
@@ -561,7 +635,7 @@ private class BandItem(
 )
 
 /**
- * The side [sideOrder]`[index]` around whatever is inside it: the next side,
+ * The band [bands]`[index]` around whatever is inside it: the next band,
  * down to the content.
  *
  * Every child is [key]ed, the content included, because Compose otherwise
@@ -573,26 +647,27 @@ private class BandItem(
 @Composable
 private fun DockBand(
     state: DockLayoutState,
-    sideOrder: List<DockSide>,
+    bands: List<Band>,
     index: Int,
     content: @Composable () -> Unit,
 ) {
-    if (index == sideOrder.size) {
+    if (index == bands.size) {
         content()
         return
     }
-    val side = sideOrder[index]
-    val panels = state.panelsOn(side)
-    val inner: @Composable () -> Unit = { DockBand(state, sideOrder, index + 1, content) }
+    val band = bands[index]
+    val side = band.side
+    val panels = state.panelsOn(band)
+    val inner: @Composable () -> Unit = { DockBand(state, bands, index + 1, content) }
     val layered = state.isLayered(side)
-    val outerToInner = if (layered) layeredItems(state, side, panels) else splitItems(state, side, panels)
+    val outerToInner = if (layered) layeredItems(state, side, panels) else splitItems(state, band, panels)
     val leading = side == DockSide.Left || side == DockSide.Top
     val contentItem = BandItem(CONTENT_KEY, inner)
     val children = if (leading) outerToInner + contentItem else listOf(contentItem) + outerToInner.asReversed()
-    // The band's rect is what a drop preview on this side is drawn against.
+    // The band's rect is what a drop preview in it is drawn against.
     val measured =
         Modifier.fillMaxSize().onPositionChanged {
-            state.bandBoundsInWindowPx[side] = it.boundsInWindow()
+            state.bandBoundsInWindowPx[band] = it.boundsInWindow()
         }
     if (side.isVertical) {
         Row(measured) {
@@ -657,15 +732,16 @@ private fun layeredItems(
         )
     }
 
-/** A split side: one stack sharing the side's extent, then the splitter that drags it. */
+/** A split side's band: one stack sharing the side's extent, then the splitter that drags it. */
 private fun splitItems(
     state: DockLayoutState,
-    side: DockSide,
+    band: Band,
     panels: List<SatelliteEntry>,
 ): List<BandItem> {
     if (panels.isEmpty()) return emptyList()
+    val side = band.side
     return listOf(
-        BandItem("stack:$side") { SplitStack(state, side, panels) },
+        BandItem("stack:$side") { SplitStack(state, band, panels) },
         BandItem("splitter:$side") {
             val orientation = if (side.isVertical) Orientation.Horizontal else Orientation.Vertical
             val scope =
@@ -694,12 +770,13 @@ private fun splitItems(
 @Composable
 private fun SplitStack(
     state: DockLayoutState,
-    side: DockSide,
+    band: Band,
     panels: List<SatelliteEntry>,
 ) {
+    val side = band.side
     val extent = state.drawnSideExtent(side)
     val orientation = if (side.isVertical) Orientation.Vertical else Orientation.Horizontal
-    val measure = Modifier.onSizeChanged { state.stackLengthsPx[side] = if (side.isVertical) it.height else it.width }
+    val measure = Modifier.onSizeChanged { state.stackLengthsPx[band] = if (side.isVertical) it.height else it.width }
 
     @Composable
     fun WeightDivider(
@@ -707,9 +784,9 @@ private fun SplitStack(
         after: SatelliteEntry,
     ) {
         val scope =
-            remember(state, side, before, after) {
+            remember(state, band, before, after) {
                 DockSplitterScopeImpl(side, orientation, before) { deltaPx, density ->
-                    moveWeight(state, side, before, after, deltaPx, density)
+                    moveWeight(state, band, before, after, deltaPx, density)
                 }
             }
         SplitterSlot(state, scope)

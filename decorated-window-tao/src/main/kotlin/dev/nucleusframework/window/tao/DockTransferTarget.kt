@@ -79,12 +79,14 @@ internal class DockTransferTarget(
         if (zones.isEmpty()) {
             return dockSideAt(geometry.layoutBoundsInWindowPx, positionInWindowPx, zonePx)?.let { DockTarget(host, it) }
         }
-        // A stack the pointer is over wins over a strip running across its corner.
+        // The strip along the very edge first, as for a pointer drag; then a
+        // stack the pointer is over, which wins over a strip running across its corner.
         val (side, zone) =
-            zones.entries.firstOrNull { (_, zone) -> zone.slots.any { it.contains(positionInWindowPx) } }
+            zones.entries.firstOrNull { (_, zone) -> zone.outerStrip.contains(positionInWindowPx) }
+                ?: zones.entries.firstOrNull { (_, zone) -> zone.overStack(positionInWindowPx) }
                 ?: zones.entries.firstOrNull { (_, zone) -> zone.strip.contains(positionInWindowPx) }
                 ?: return null
-        return DockTarget(host, side, zone.slotAt(positionInWindowPx))
+        return zone.targetAt(host, side, positionInWindowPx)
     }
 
     private fun preview(event: DragAndDropEvent) {

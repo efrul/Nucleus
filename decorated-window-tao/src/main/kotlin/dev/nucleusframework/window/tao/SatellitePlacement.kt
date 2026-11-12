@@ -99,10 +99,10 @@ public sealed interface SatellitePlacement {
      * [SatelliteLayoutSnapshot].
      *
      * @property side the edge the panel attaches to.
-     * @property order rank among the panels docked on the same side of the
-     *   same layout, low to high from the top (left/right sides) or the left
-     *   (top/bottom sides) on a split side, and from the edge towards the
-     *   content on a layered one. [SatelliteWorkspace.dock] and
+     * @property order rank among the panels docked in the same band ([outer])
+     *   of the same side of the same layout, low to high from the top
+     *   (left/right sides) or the left (top/bottom sides) on a split side, and
+     *   from the edge towards the content on a layered one. [SatelliteWorkspace.dock] and
      *   [SatelliteWorkspace.undock] keep a side's ranks contiguous from `0`
      *   and remember the rank a satellite leaves with, so it comes back to
      *   it; a declared placement's order is the position it is inserted at.
@@ -113,12 +113,22 @@ public sealed interface SatellitePlacement {
      *   from the floating window's size. Ignored on a split side.
      * @property weight the panel's share of a split side's length, relative
      *   to its neighbours. Ignored on a layered side.
+     * @property outer whether the panel is in its side's outer band. A side
+     *   has two bands: the inner one, at the place the layout's `sideOrder`
+     *   gives the side, and the outer one, outside every inner band, which
+     *   runs the full length of the layout and owns the side's corners —
+     *   among the outer bands, the one docked into last is outermost
+     *   ([SatelliteWorkspace.outerBandOrder]). A drag released on the strip at
+     *   the layout's very edge docks into it (`DockLayout(outerBandSides = …)`).
+     *   Each band is laid out as the side is, split or layered, with ranks of
+     *   its own; the two bands of a split side share its thickness.
      */
     public data class Docked(
         val side: DockSide,
         val order: Int = 0,
         val extent: Dp? = null,
         val weight: Float = 1f,
+        val outer: Boolean = false,
     ) : SatellitePlacement {
         init {
             require(weight > 0f) { "weight must be positive, was $weight" }

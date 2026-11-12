@@ -130,6 +130,7 @@ private fun ReaderBody(
             modifier = Modifier.weight(1f).fillMaxHeight(),
             sideOrder = live.sideOrder,
             layeredSides = if (live.layeredRight) setOf(DockSide.Right) else emptySet(),
+            outerBandSides = if (live.outerBands) DockSide.entries.toSet() else emptySet(),
             splitter = { ReaderSplitter(live.style) },
             panel = { body -> PaneCard(live.style) { body() } },
         ) {

@@ -105,14 +105,14 @@ internal class DockSplitterScopeImpl(
  */
 internal fun moveWeight(
     state: DockLayoutState,
-    side: DockSide,
+    band: Band,
     before: SatelliteEntry,
     after: SatelliteEntry,
     deltaPx: Float,
     density: Density,
 ) {
-    val lengthPx = state.stackLengthsPx[side]?.takeIf { it > 0 } ?: return
-    val total = state.panelsOn(side).sumOf { weightOf(it).toDouble() }.toFloat()
+    val lengthPx = state.stackLengthsPx[band]?.takeIf { it > 0 } ?: return
+    val total = state.panelsOn(band).sumOf { weightOf(it).toDouble() }.toFloat()
     val pxPerWeight = lengthPx / total
     val minWeight = with(density) { SatelliteWorkspace.MinDockExtent.toPx() } / pxPerWeight
     val beforeWeight = weightOf(before)

@@ -27,12 +27,13 @@ class DockLandingRectTest {
     private val state =
         DockLayoutState(workspace).apply {
             layeredSides = setOf(DockSide.Right)
+            bands = bandOrder(ReaderSideOrder, emptyList())
             layoutBoundsInWindowPx = Rect(20f, 40f, 1020f, 640f)
             // The right band is the whole layout; the bottom band stops at the right stack.
-            bandBoundsInWindowPx[DockSide.Right] = Rect(20f, 40f, 1020f, 640f)
-            bandBoundsInWindowPx[DockSide.Bottom] = Rect(20f, 40f, 720f, 640f)
-            bandBoundsInWindowPx[DockSide.Left] = Rect(20f, 40f, 720f, 440f)
-            bandBoundsInWindowPx[DockSide.Top] = Rect(220f, 40f, 720f, 440f)
+            bandBoundsInWindowPx[inner(DockSide.Right)] = Rect(20f, 40f, 1020f, 640f)
+            bandBoundsInWindowPx[inner(DockSide.Bottom)] = Rect(20f, 40f, 720f, 640f)
+            bandBoundsInWindowPx[inner(DockSide.Left)] = Rect(20f, 40f, 720f, 440f)
+            bandBoundsInWindowPx[inner(DockSide.Top)] = Rect(220f, 40f, 720f, 440f)
         }
 
     private fun docked(
@@ -55,7 +56,7 @@ class DockLandingRectTest {
     @Test
     fun `a bottom preview spans the bottom band, not the layout`() {
         state.docked = emptyList()
-        assertEquals(Rect(0f, 540f, 700f, 600f), state.landingRectPx(DockSide.Bottom, 60f, joinsStack = true))
+        assertEquals(Rect(0f, 540f, 700f, 600f), state.landingRectPx(inner(DockSide.Bottom), 60f, joinsStack = true))
     }
 
     @Test
@@ -65,7 +66,7 @@ class DockLandingRectTest {
                 docked("tree", DockSide.Right, 0, Rect(920f, 40f, 1020f, 640f)),
                 docked("toc", DockSide.Right, 1, Rect(820f, 40f, 920f, 640f)),
             )
-        assertEquals(Rect(740f, 0f, 800f, 600f), state.landingRectPx(DockSide.Right, 60f, joinsStack = true))
+        assertEquals(Rect(740f, 0f, 800f, 600f), state.landingRectPx(inner(DockSide.Right), 60f, joinsStack = true))
     }
 
     @Test
@@ -73,18 +74,18 @@ class DockLandingRectTest {
         state.docked = listOf(docked("targum", DockSide.Left, 0, Rect(20f, 40f, 220f, 440f)))
         // The stack at the thickness the side takes once the panel joins it (#695):
         // its own when nothing changes, wider when the newcomer's limits widen it.
-        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(DockSide.Left, 200f, joinsStack = true))
-        assertEquals(Rect(0f, 0f, 260f, 400f), state.landingRectPx(DockSide.Left, 260f, joinsStack = true))
-        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(DockSide.Left, 0f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(inner(DockSide.Left), 200f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 260f, 400f), state.landingRectPx(inner(DockSide.Left), 260f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 200f, 400f), state.landingRectPx(inner(DockSide.Left), 0f, joinsStack = true))
         // The idle outline stays a strip at the edge of the band.
-        assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(DockSide.Left, 60f, joinsStack = false))
+        assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = false))
     }
 
     @Test
     fun `an empty side previews a strip at the edge of its band`() {
         state.docked = emptyList()
-        assertEquals(Rect(200f, 0f, 700f, 60f), state.landingRectPx(DockSide.Top, 60f, joinsStack = true))
-        assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(DockSide.Left, 60f, joinsStack = true))
+        assertEquals(Rect(200f, 0f, 700f, 60f), state.landingRectPx(inner(DockSide.Top), 60f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = true))
     }
 
     @Test
@@ -98,10 +99,10 @@ class DockLandingRectTest {
         // bottom frees up, so the drop will run the full height of the band.
         assertEquals(
             Rect(0f, 0f, 60f, 600f),
-            state.landingRectPx(DockSide.Left, 60f, joinsStack = true, dragged = comments),
+            state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = true, dragged = comments),
         )
         // Without the drag it is the band as measured, above the panel.
-        assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(DockSide.Left, 60f, joinsStack = true))
+        assertEquals(Rect(0f, 0f, 60f, 400f), state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = true))
     }
 
     @Test
@@ -112,7 +113,7 @@ class DockLandingRectTest {
 
         assertEquals(
             Rect(0f, 0f, 60f, 400f),
-            state.landingRectPx(DockSide.Left, 60f, joinsStack = true, dragged = comments),
+            state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = true, dragged = comments),
             "the bottom side keeps its extent, so the left band is unchanged",
         )
     }
@@ -120,13 +121,14 @@ class DockLandingRectTest {
     @Test
     fun `without a measured band the layout itself is the band`() {
         val bare = DockLayoutState(workspace).apply { layoutBoundsInWindowPx = Rect(0f, 0f, 400f, 300f) }
-        assertEquals(Rect(340f, 0f, 400f, 300f), bare.landingRectPx(DockSide.Right, 60f, joinsStack = true))
+        assertEquals(Rect(340f, 0f, 400f, 300f), bare.landingRectPx(inner(DockSide.Right), 60f, joinsStack = true))
     }
 }
 
 /**
- * Which sides a drag is offered ([hintedSides]): all four, minus the one the
- * dragged panel already occupies in the very window being hinted.
+ * Which sides a drag is offered ([hintedBands], with no outer band on offer):
+ * all four, minus the one the dragged panel already occupies in the very
+ * window being hinted.
  */
 class DockZoneHintSidesTest {
     private val host = TaoWindow(handle = 1L)
@@ -192,9 +194,10 @@ class DockDropSlotsTest {
     private val state =
         DockLayoutState(workspace).apply {
             layeredSides = setOf(DockSide.Right)
+            bands = bandOrder(ReaderSideOrder, emptyList())
             layoutBoundsInWindowPx = Rect(20f, 40f, 1020f, 640f)
-            bandBoundsInWindowPx[DockSide.Right] = Rect(20f, 40f, 1020f, 640f)
-            bandBoundsInWindowPx[DockSide.Bottom] = Rect(20f, 40f, 720f, 640f)
+            bandBoundsInWindowPx[inner(DockSide.Right)] = Rect(20f, 40f, 1020f, 640f)
+            bandBoundsInWindowPx[inner(DockSide.Bottom)] = Rect(20f, 40f, 720f, 640f)
         }
 
     private fun docked(
@@ -221,40 +224,43 @@ class DockDropSlotsTest {
 
     @Test
     fun `a layered side is cut at the layers' centres, from its edge through the strip`() {
-        val strip = state.landingRectPx(DockSide.Right, 60f, joinsStack = false)
+        val strip = state.landingRectPx(inner(DockSide.Right), 60f, joinsStack = false)
         assertEquals(Rect(740f, 0f, 800f, 600f), strip)
         assertEquals(
             listOf(Rect(950f, 0f, 1000f, 600f), Rect(850f, 0f, 950f, 600f), Rect(740f, 0f, 850f, 600f)),
-            state.dropSlotsPx(DockSide.Right, strip, dragged = null),
+            state.dropSlotsPx(inner(DockSide.Right), strip, dragged = null),
         )
         // The dragged layer is left out: its neighbours' centres are the cuts,
         // and the region it stands in is the rank it already holds.
         assertEquals(
             listOf(Rect(950f, 0f, 1000f, 600f), Rect(740f, 0f, 950f, 600f)),
-            state.dropSlotsPx(DockSide.Right, strip, dragged = toc),
+            state.dropSlotsPx(inner(DockSide.Right), strip, dragged = toc),
         )
         assertEquals(
             1,
-            DockDropZone(strip, state.dropSlotsPx(DockSide.Right, strip, dragged = toc)).slotAt(Offset(850f, 300f)),
+            DockDropZone(
+                strip,
+                state.dropSlotsPx(inner(DockSide.Right), strip, dragged = toc),
+            ).slotAt(Offset(850f, 300f)),
         )
         assertEquals(DockTarget(host, DockSide.Right, 1), workspace.ownTarget(toc, host))
     }
 
     @Test
     fun `a split side is cut along its length, from the band's start`() {
-        val strip = state.landingRectPx(DockSide.Bottom, 60f, joinsStack = false)
+        val strip = state.landingRectPx(inner(DockSide.Bottom), 60f, joinsStack = false)
         assertEquals(
             listOf(Rect(0f, 540f, 175f, 600f), Rect(175f, 540f, 525f, 600f), Rect(525f, 540f, 700f, 600f)),
-            state.dropSlotsPx(DockSide.Bottom, strip, dragged = null),
+            state.dropSlotsPx(inner(DockSide.Bottom), strip, dragged = null),
         )
     }
 
     @Test
     fun `no slots without another panel, or before it is placed`() {
-        val strip = state.landingRectPx(DockSide.Left, 60f, joinsStack = false)
-        assertEquals(emptyList(), state.dropSlotsPx(DockSide.Left, strip, dragged = null))
+        val strip = state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = false)
+        assertEquals(emptyList(), state.dropSlotsPx(inner(DockSide.Left), strip, dragged = null))
         tree.dockedBoundsInWindowPx = null
-        assertEquals(emptyList(), state.dropSlotsPx(DockSide.Right, strip, dragged = null))
+        assertEquals(emptyList(), state.dropSlotsPx(inner(DockSide.Right), strip, dragged = null))
         assertNull(DockDropZone(strip).slotAt(Offset.Zero))
     }
 
@@ -287,8 +293,8 @@ class DockDropSlotsTest {
         val movable = docked("movable", DockSide.Left, 1, Rect(100f, 0f, 200f, 600f))
         state.layeredSides = state.layeredSides + DockSide.Left
         state.docked = listOf(pinned, movable)
-        state.bandBoundsInWindowPx[DockSide.Left] = Rect(20f, 40f, 1020f, 640f)
-        val strip = state.landingRectPx(DockSide.Left, 60f, joinsStack = false)
+        state.bandBoundsInWindowPx[inner(DockSide.Left)] = Rect(20f, 40f, 1020f, 640f)
+        val strip = state.landingRectPx(inner(DockSide.Left), 60f, joinsStack = false)
         assertEquals(Rect(200f, 0f, 260f, 600f), strip, "inset behind the two layers")
 
         // Dragging the movable layer: rank 0 would push the pinned one in, so
@@ -296,38 +302,46 @@ class DockDropSlotsTest {
         // rank 1 covers the whole region, the pinned layer included.
         assertEquals(
             listOf(Rect.Zero, Rect(0f, 0f, 260f, 600f)),
-            state.dropSlotsPx(DockSide.Left, strip, dragged = movable),
+            state.dropSlotsPx(inner(DockSide.Left), strip, dragged = movable),
         )
-        val zone = DockDropZone(strip, state.dropSlotsPx(DockSide.Left, strip, dragged = movable))
+        val zone = DockDropZone(strip, state.dropSlotsPx(inner(DockSide.Left), strip, dragged = movable))
         assertEquals(1, zone.slotAt(Offset(50f, 300f)), "aimed at the pinned layer, it lands behind it")
         // Aimed in front of it, the movable layer is shown right behind it.
-        assertEquals(Rect(100f, 0f, 160f, 600f), state.dropRectPx(DockSide.Left, movable, 0, 60f))
+        assertEquals(Rect(100f, 0f, 160f, 600f), state.dropRectPx(inner(DockSide.Left), movable, 0, 60f))
         // The pinned layer itself is offered no rank at all.
-        assertEquals(emptyList(), state.dropSlotsPx(DockSide.Left, strip, dragged = pinned))
+        assertEquals(emptyList(), state.dropSlotsPx(inner(DockSide.Left), strip, dragged = pinned))
     }
 
     @Test
     fun `a layer dropped at a rank is drawn where that rank puts it, at its own extent`() {
         // Layered right: rank 1 is between the tree (900..1000) and the toc, which moves in to make room.
-        assertEquals(Rect(840f, 0f, 900f, 600f), state.dropRectPx(DockSide.Right, null, 1, 60f))
-        assertEquals(Rect(940f, 0f, 1000f, 600f), state.dropRectPx(DockSide.Right, null, 0, 60f), "the side's edge")
-        assertEquals(Rect(740f, 0f, 800f, 600f), state.dropRectPx(DockSide.Right, null, 2, 60f), "past the innermost")
+        assertEquals(Rect(840f, 0f, 900f, 600f), state.dropRectPx(inner(DockSide.Right), null, 1, 60f))
+        assertEquals(
+            Rect(940f, 0f, 1000f, 600f),
+            state.dropRectPx(inner(DockSide.Right), null, 0, 60f),
+            "the side's edge",
+        )
+        assertEquals(
+            Rect(740f, 0f, 800f, 600f),
+            state.dropRectPx(inner(DockSide.Right), null, 2, 60f),
+            "past the innermost",
+        )
         // The toc dragged to rank 0: only the tree stays, behind it.
-        assertEquals(Rect(940f, 0f, 1000f, 600f), state.dropRectPx(DockSide.Right, toc, 0, 60f))
+        assertEquals(Rect(940f, 0f, 1000f, 600f), state.dropRectPx(inner(DockSide.Right), toc, 0, 60f))
     }
 
     @Test
     fun `a panel dropped in a split stack is drawn as the share the weights give it`() {
         // Split bottom, the sources dragged: they and the comments share the length again.
-        assertEquals(Rect(350f, 540f, 700f, 600f), state.dropRectPx(DockSide.Bottom, sources, 1, 60f))
-        assertEquals(Rect(0f, 540f, 350f, 600f), state.dropRectPx(DockSide.Bottom, sources, 0, 60f))
+        assertEquals(Rect(350f, 540f, 700f, 600f), state.dropRectPx(inner(DockSide.Bottom), sources, 1, 60f))
+        assertEquals(Rect(0f, 540f, 350f, 600f), state.dropRectPx(inner(DockSide.Bottom), sources, 0, 60f))
         // A third panel, weight 1, in the middle: a third each.
         val notes = workspace.register("notes", "notes", SatellitePlacement.Floating(), initiallyOpen = true)
-        assertRectEquals(Rect(700f / 3, 540f, 1400f / 3, 600f), state.dropRectPx(DockSide.Bottom, notes, 1, 60f))
+        assertRectEquals(Rect(700f / 3, 540f, 1400f / 3, 600f), state.dropRectPx(inner(DockSide.Bottom), notes, 1, 60f))
         // Twice the weight of each of the others, between them: half the stack.
         workspace.dock("notes", DockSide.Left, host = host)
         workspace.setDockedWeight("notes", 2f)
-        assertRectEquals(Rect(175f, 540f, 525f, 600f), state.dropRectPx(DockSide.Bottom, notes, 1, 60f))
+        assertRectEquals(Rect(175f, 540f, 525f, 600f), state.dropRectPx(inner(DockSide.Bottom), notes, 1, 60f))
     }
 
     private fun assertRectEquals(
@@ -344,7 +358,7 @@ class DockDropSlotsTest {
 
     @Test
     fun `dropped on an empty side, the space is the strip along its edge`() {
-        assertEquals(Rect(0f, 0f, 60f, 600f), state.dropRectPx(DockSide.Left, null, 0, 60f))
+        assertEquals(Rect(0f, 0f, 60f, 600f), state.dropRectPx(inner(DockSide.Left), null, 0, 60f))
     }
 }
 
@@ -479,3 +493,16 @@ class DockTargetFromDraggedRectTest {
         assertEquals(DockTarget(a, DockSide.Top), workspace.dockTargetAt(covering, Offset(0f, 0f)))
     }
 }
+
+/** The inner band of [side], where the layout's side order puts it. */
+internal fun inner(side: DockSide): Band = Band(side, outer = false)
+
+/** The reader layout of these tests: the right side first, the bottom inside it, then left and top. */
+internal val ReaderSideOrder = listOf(DockSide.Right, DockSide.Bottom, DockSide.Left, DockSide.Top)
+
+/** The sides of the bands [hintedBands] offers, with no outer band on offer: the inner band of each. */
+internal fun hintedSides(
+    dragged: SatelliteEntry,
+    host: TaoWindow,
+    satellites: Collection<SatelliteEntry>,
+): List<DockSide> = hintedBands(dragged, host, satellites).map { it.side }

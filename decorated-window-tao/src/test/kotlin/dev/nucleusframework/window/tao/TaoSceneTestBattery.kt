@@ -917,6 +917,33 @@ public object TaoSceneTestBattery {
         run("DockTargetFromDraggedRectTest: a dragged rect covering every zone is resolved by the pointer") {
             DockTargetFromDraggedRectTest().`a dragged rect covering every zone is resolved by the pointer`()
         }
+        run("DockOuterBandTest: the outer bands come first, the one docked into last outermost, then the inner bands") {
+            DockOuterBandTest().`the outer bands come first, the one docked into last outermost, then the inner bands`()
+        }
+        run("DockOuterBandTest: an outer band ranks its own panels, and the side docked into last goes first") {
+            DockOuterBandTest().`an outer band ranks its own panels, and the side docked into last goes first`()
+        }
+        run("DockOuterBandTest: the snapshot keeps every panel's band and which outer band owns the corners") {
+            DockOuterBandTest().`the snapshot keeps every panel's band and which outer band owns the corners`()
+        }
+        run("DockOuterBandTest: a panel alone in a band is offered the other band of its side, not its own") {
+            DockOuterBandTest().`a panel alone in a band is offered the other band of its side, not its own`()
+        }
+        run("DockOuterBandGeometryTest: an outer band is drawn the full length of the layout, corners included") {
+            DockOuterBandGeometryTest().`an outer band is drawn the full length of the layout, corners included`()
+        }
+        run("DockOuterBandGeometryTest: an inner band is drawn inside the outer ones, over the room the drag frees") {
+            DockOuterBandGeometryTest().`an inner band is drawn inside the outer ones, over the room the drag frees`()
+        }
+        run("DockOuterBandTargetTest: the panel's edge reaches the inner band, the pointer at the edge the outer one") {
+            DockOuterBandTargetTest().`the panel's edge reaches the inner band, the pointer at the edge the outer one`()
+        }
+        run("DockOuterBandTargetTest: an outer band alone on offer is reached by the pointer, not the panel's edge") {
+            DockOuterBandTargetTest().`an outer band alone on offer is reached by the pointer, not the panel's edge`()
+        }
+        run("DockOuterBandTargetTest: the ranks of the outer band are picked over its panels") {
+            DockOuterBandTargetTest().`the ranks of the outer band are picked over its panels`()
+        }
 
         run("SatelliteWorkspaceTest: the first member to join owns the satellites until focus moves") {
             SatelliteWorkspaceTest().`the first member to join owns the satellites until focus moves`()
