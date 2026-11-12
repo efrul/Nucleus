@@ -78,6 +78,7 @@ internal object DockLayoutHeadfulCases {
             aDropOnALayeredSideAddsALayerOfTheWindowsWidth(),
             undockingALayerLiftsTheWindowOffThePanel(),
             thePaletteEdgeDecidesTheZoneNotThePointer(),
+            thePointerAtTheEdgeDocksIntoTheOuterBand(),
             aPanelDockedAgainReturnsToTheRankItLeft(),
             aLayerDraggedOverTheOutermostOneBecomesTheFirst(),
             aSplitPanelDroppedOnItsStackTakesTheRankUnderThePointer(),
@@ -823,6 +824,89 @@ internal object DockLayoutHeadfulCases {
                 check(near(panel(fixture, INSPECTOR).left, 0f, LAYOUT_TOLERANCE_PX * 2)) {
                     "the new panel is not at the left edge: ${panel(fixture, INSPECTOR)}"
                 }
+            },
+        )
+    }
+
+    // ── 10b. the strip along the very edge: the outer band ──────────────
+
+    /**
+     * The pointer pushed into the strip along the layout's very edge docks the
+     * palette into the side's outer band: it runs the layout's full height,
+     * the bottom panel's corner included, and the bottom panel now stops at
+     * it — the corner goes where the palette was dropped.
+     */
+    private fun thePointerAtTheEdgeDocksIntoTheOuterBand(): TaoWindowTestCase {
+        val fixture =
+            DockLayoutFixture(
+                specs =
+                    listOf(
+                        DockPanelSpec(TREE, SatellitePlacement.Docked(DockSide.Bottom, extent = BOTTOM_H_DP.dp)),
+                        DockPanelSpec(
+                            INSPECTOR,
+                            SatellitePlacement.Floating(
+                                positioner = workspaceRightEdgePositioner(),
+                                size = workspaceSatelliteSize(),
+                            ),
+                        ),
+                    ),
+                outerBandSides = setOf(DockSide.Left),
+            )
+        return TaoWindowTestCase(
+            name = "dock layout the pointer at the very edge docks into the outer band, which takes the corner",
+            skip = ::workspaceSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            content = { fixture.Body() },
+            applicationContent = { with(fixture) { Satellites() } },
+            driver = {
+                awaitDockedBodies(fixture, TREE)
+                awaitUntil(
+                    "the inspector floats",
+                ) { fixture.floatingWindows.value[INSPECTOR]?.hasRealFramePx() == true }
+                settle(SETTLE_AFTER_MAP_MILLIS)
+                val workspace = fixture.workspace
+                val floating = requireNotNull(fixture.floatingWindows.value[INSPECTOR])
+                val layout = awaitDockLayout(workspace, window)
+                val scale = window.scaleFactor
+                val outer = requireNotNull(floating.outerBoundsPx())
+                val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * floating.scaleFactor)
+                // The pointer itself in the strip along the left edge, halfway down.
+                val stripPx = SatelliteWorkspace.OuterDockZoneWidth.value * scale
+                val target = Offset(layout.left + stripPx / 2f, layout.center.y)
+                val expected = DockTarget(window, DockSide.Left, outer = true)
+
+                val robot = robotPressAndDrag(grab, target, scale) != null
+                if (robot) {
+                    awaitUntil("the left outer band previews — ${robotAim()}") { workspace.dockPreview == expected }
+                    checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
+                } else {
+                    System.err.println("[dock-layout] robot unavailable, driving the drag session directly")
+                    val session =
+                        requireNotNull(
+                            workspace.beginDrag(INSPECTOR, SatelliteDragOrigin.FloatingWindow(floating), grab),
+                        )
+                    session.update(target)
+                    check(workspace.dockPreview == expected) {
+                        "the pointer is in the left edge strip but ${workspace.dockPreview} is previewed"
+                    }
+                    session.end(target)
+                }
+                awaitUntil("the palette docked in the left outer band") {
+                    val docked = workspace.satellite(INSPECTOR)?.placement as? SatellitePlacement.Docked
+                    docked?.side == DockSide.Left && docked.outer
+                }
+                awaitDockedBodies(fixture, TREE, INSPECTOR)
+                val inspector = panel(fixture, INSPECTOR)
+                val tree = panel(fixture, TREE)
+                check(near(inspector.height, layout.height, LAYOUT_TOLERANCE_PX * 2)) {
+                    "the panel does not run the layout's full height: panel=$inspector layout=$layout"
+                }
+                check(tree.left >= inspector.right - LAYOUT_TOLERANCE_PX) {
+                    "the bottom panel still runs under the left one: tree=$tree inspector=$inspector"
+                }
+                check(workspace.outerBandOrder == listOf(DockSide.Left)) { "outer bands: ${workspace.outerBandOrder}" }
             },
         )
     }
