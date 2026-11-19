@@ -10,8 +10,8 @@
 #   scripts/publish-tearoff-local.sh [target-version] [extra artifact ids...]
 set -euo pipefail
 
-BASE="3.0.0-dev-202610272317"
-TARGET="${1:-3.0.0-dev-202610272317-1-tearoff}"
+BASE="3.0.0-dev-202611011507"
+TARGET="${1:-3.0.0-dev-202611011507-2-tearoff}"
 shift || true
 REPO="${NUCLEUS_SOURCE_REPO:-https://repo1.maven.org/maven2}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
